@@ -14,9 +14,7 @@ st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap');
 
-html, body, [class*="css"] {
-    font-family: 'Inter', sans-serif;
-}
+html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
 
 .stApp {
     background:
@@ -30,10 +28,7 @@ section[data-testid="stSidebar"] {
     border-right: 1px solid rgba(255,255,255,0.06);
 }
 
-.block-container {
-    padding-top: 1.2rem;
-    padding-bottom: 2rem;
-}
+.block-container { padding-top: 1.2rem; padding-bottom: 2rem; }
 
 div[data-testid="stMetric"] {
     background: rgba(15, 23, 42, 0.72);
@@ -43,9 +38,7 @@ div[data-testid="stMetric"] {
     box-shadow: 0 10px 30px rgba(0,0,0,0.18);
 }
 
-div[data-baseweb="tab-list"] {
-    gap: 10px;
-}
+div[data-baseweb="tab-list"] { gap: 10px; }
 
 button[data-baseweb="tab"] {
     border-radius: 999px !important;
@@ -84,7 +77,7 @@ st.markdown("""
         Indian Stocks Forecast Pro
     </h1>
     <p style="margin:0.25rem 0 0 0; color: rgba(229,231,235,.65);">
-        Clean forecasting, trend signals, backtesting, and comparison for Indian stocks
+        Clean forecasting, trend signals, backtesting, and market structure analysis
     </p>
 </div>
 """, unsafe_allow_html=True)
@@ -206,6 +199,129 @@ def forecast_ets(series, steps):
     except Exception:
         return None
 
+def anchored_vwap(df, anchor_idx=None):
+    d = df.copy()
+    if anchor_idx is None:
+        anchor_idx = max(0, len(d) - 60)
+    d = d.iloc[anchor_idx:].copy()
+    if d.empty or "Volume" not in d.columns:
+        return pd.Series(dtype=float)
+    typical = (d["High"] + d["Low"] + d["Close"]) / 3
+    avwap = (typical * d["Volume"]).cumsum() / d["Volume"].cumsum()
+    avwap.index = d["Date"].values
+    return avwap
+
+def volume_profile(df, bins=24):
+    d = df.copy()
+    if d.empty or "Volume" not in d.columns:
+        return pd.DataFrame()
+    price_min = float(d["Low"].min())
+    price_max = float(d["High"].max())
+    if price_max <= price_min:
+        return pd.DataFrame()
+    edges = np.linspace(price_min, price_max, bins + 1)
+    centers = (edges[:-1] + edges[1:]) / 2
+    bucket = pd.cut(d["Close"], bins=edges, include_lowest=True, labels=False)
+    vol = d.groupby(bucket)["Volume"].sum().reindex(range(bins), fill_value=0).values
+    vp = pd.DataFrame({"price": centers, "volume": vol})
+    if vp["volume"].sum() > 0:
+        poc = vp.loc[vp["volume"].idxmax(), "price"]
+        total = vp["volume"].sum()
+        vp_sorted = vp.sort_values("volume", ascending=False).copy()
+        vp_sorted["cum"] = vp_sorted["volume"].cumsum()
+        selected = vp_sorted[vp_sorted["cum"] <= total * 0.7]
+        if selected.empty:
+            selected = vp_sorted.head(1)
+        vah = selected["price"].max()
+        val = selected["price"].min()
+    else:
+        poc = vah = val = np.nan
+    return vp.assign(POC=poc, VAH=vah, VAL=val)
+
+def liquidity_sweep(df, lookback=20):
+    d = df.copy()
+    if len(d) < lookback + 2:
+        return "None", None
+    recent = d.iloc[-lookback-1:-1]
+    last = d.iloc[-1]
+    prev_high = recent["High"].max()
+    prev_low = recent["Low"].min()
+    bull_sweep = last["Low"] < prev_low and last["Close"] > prev_low
+    bear_sweep = last["High"] > prev_high and last["Close"] < prev_high
+    if bull_sweep:
+        return "Bullish Sweep", float(prev_low)
+    if bear_sweep:
+        return "Bearish Sweep", float(prev_high)
+    return "None", None
+
+def fvg_zones(df):
+    d = df.copy()
+    zones = []
+    if len(d) < 3:
+        return zones
+    for i in range(2, len(d)):
+        c1 = d.iloc[i-2]
+        c3 = d.iloc[i]
+        if c3["Low"] > c1["High"]:
+            zones.append(("Bullish FVG", float(c1["High"]), float(c3["Low"]), d.iloc[i]["Date"]))
+        elif c3["High"] < c1["Low"]:
+            zones.append(("Bearish FVG", float(c3["High"]), float(c1["Low"]), d.iloc[i]["Date"]))
+    return zones
+
+def amd_state(df):
+    d = df.copy()
+    if len(d) < 30:
+        return "Unknown"
+    trend = d["Close"].iloc[-1] - d["Close"].iloc[10]
+    vol = d["Volume"].iloc[-10:].mean() if "Volume" in d.columns else 0
+    if trend > 0 and vol > 0:
+        return "Distribution"
+    if trend < 0 and vol > 0:
+        return "Accumulation"
+    return "Manipulation"
+
+def context_score(df):
+    d = df.copy().dropna(subset=["Close", "SMA_20", "SMA_50", "RSI_14"])
+    if d.empty:
+        return 0, "Weak"
+    last = d.iloc[-1]
+    score = 0
+    if last["SMA_20"] > last["SMA_50"]:
+        score += 2
+    if last["Close"] > last["SMA_20"]:
+        score += 1
+    avwap = anchored_vwap(df)
+    if not avwap.empty and last["Close"] > avwap.iloc[-1]:
+        score += 1
+    vp = volume_profile(df)
+    if not vp.empty:
+        poc = vp["POC"].iloc[0]
+        vah = vp["VAH"].iloc[0]
+        val = vp["VAL"].iloc[0]
+        if last["Close"] >= val and last["Close"] <= vah:
+            score += 1
+        if abs(last["Close"] - poc) / poc < 0.02:
+            score += 1
+    sweep, _ = liquidity_sweep(df)
+    if sweep == "Bullish Sweep":
+        score += 2
+    if sweep == "Bearish Sweep":
+        score -= 1
+    if pd.notna(last["RSI_14"]) and 40 <= last["RSI_14"] <= 65:
+        score += 1
+    state = amd_state(df)
+    if state == "Distribution" and score >= 5:
+        score += 1
+    if score >= 7:
+        label = "Strong"
+    elif score >= 5:
+        label = "Good"
+    elif score >= 3:
+        label = "Neutral"
+    else:
+        label = "Weak"
+    return score, label
+
 if run_btn:
     if not tickers:
         st.error("Add at least one ticker.")
@@ -227,6 +343,7 @@ if run_btn:
     annual_vol = float(base["Return"].rolling(20).std().iloc[-1] * np.sqrt(252)) if pd.notna(base["Return"].rolling(20).std().iloc[-1]) else np.nan
     signal = signal_label(base)
     sentiment = sentiment_label(base)
+    score, score_label = context_score(base)
 
     backtested, strat_ret, bh_ret, trades, win_days, loss_days = backtest_crossover(base)
     steps = forecast_days if interval == "1d" else max(4, forecast_days // 5)
@@ -242,13 +359,19 @@ if run_btn:
     if ets_pred is not None:
         ets_pred.index = pd.bdate_range(base["Date"].iloc[-1] + pd.Timedelta(days=1), periods=len(ets_pred))
 
+    final_bias = "Hold"
+    if signal == "Buy" and score >= 5:
+        final_bias = "Buy"
+    elif signal == "Exit" and score <= 3:
+        final_bias = "Exit"
+
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Last Close", f"{last_close:,.2f}")
     c2.metric("YTD Return", f"{ytd_return:.2f}%")
     c3.metric("20D Volatility", f"{annual_vol:.2%}" if pd.notna(annual_vol) else "N/A")
-    c4.metric("Signal", signal)
+    c4.metric("Final Bias", final_bias)
 
-    t1, t2, t3, t4 = st.tabs(["Overview", "Forecast", "Strategy", "Compare"])
+    t1, t2, t3, t4, t5 = st.tabs(["Overview", "Forecast", "Strategy", "Compare", "Market Structure"])
 
     with t1:
         st.subheader("Price action")
@@ -261,7 +384,7 @@ if run_btn:
 
         colA, colB = st.columns(2)
         colA.metric("Market Sentiment", sentiment)
-        colB.metric("Backtest Return", f"{strat_ret:.2%}" if pd.notna(strat_ret) else "N/A")
+        colB.metric("Context Score", f"{score} / 10", score_label)
 
         fig2 = go.Figure()
         fig2.add_trace(go.Scatter(x=base["Date"], y=base["RSI_14"], name="RSI 14", line=dict(color="#a78bfa", width=2)))
@@ -346,5 +469,51 @@ if run_btn:
             fig.add_trace(go.Bar(x=comp["Ticker"], y=comp["YTD Return %"], name="YTD Return %"))
             fig.update_layout(height=420, template="plotly_dark")
             st.plotly_chart(fig, use_container_width=True)
+
+    with t5:
+        st.subheader("Market Structure")
+
+        avwap = anchored_vwap(base)
+        vp = volume_profile(base)
+        sweep, sweep_level = liquidity_sweep(base)
+        zones = fvg_zones(base)
+        amd = amd_state(base)
+
+        c1m, c2m, c3m = st.columns(3)
+        c1m.metric("Context Score", f"{score} / 10", score_label)
+        c2m.metric("Liquidity Sweep", sweep)
+        c3m.metric("AMD State", amd)
+
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=base["Date"], y=base["Close"], name="Close", line=dict(color="#60a5fa", width=2)))
+        fig.add_trace(go.Scatter(x=base["Date"], y=base["SMA_20"], name="SMA 20", line=dict(color="#f59e0b", width=1.5)))
+        fig.add_trace(go.Scatter(x=base["Date"], y=base["SMA_50"], name="SMA 50", line=dict(color="#10b981", width=1.5)))
+
+        if not avwap.empty:
+            fig.add_trace(go.Scatter(x=avwap.index, y=avwap.values, name="Anchored VWAP", line=dict(color="#a78bfa", width=2)))
+
+        if sweep_level is not None:
+            fig.add_hline(y=sweep_level, line_dash="dash", line_color="#f43f5e")
+
+        fig.update_layout(height=520, template="plotly_dark")
+        st.plotly_chart(fig, use_container_width=True)
+
+        if not vp.empty:
+            st.write("Volume Profile")
+            vp_fig = go.Figure()
+            vp_fig.add_trace(go.Bar(x=vp["volume"], y=vp["price"], orientation="h", name="Volume"))
+            vp_fig.update_layout(height=420, template="plotly_dark")
+            st.plotly_chart(vp_fig, use_container_width=True)
+
+            poc = vp["POC"].iloc[0]
+            vah = vp["VAH"].iloc[0]
+            val = vp["VAL"].iloc[0]
+            st.write(f"POC: {poc:.2f} | VAH: {vah:.2f} | VAL: {val:.2f}")
+
+        if zones:
+            zone_df = pd.DataFrame(zones, columns=["Type", "Lower", "Upper", "Date"])
+            st.dataframe(zone_df.tail(20), use_container_width=True)
+        else:
+            st.info("No recent FVG zones detected.")
 
     st.success("Analysis completed.")
