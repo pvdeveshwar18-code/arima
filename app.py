@@ -7,7 +7,6 @@ from statsmodels.tsa.arima.model import ARIMA
 from statsmodels.tsa.holtwinters import ExponentialSmoothing
 from sklearn.metrics import mean_absolute_error, mean_squared_error
 from math import sqrt
-from streamlit_searchbox import st_searchbox
 
 st.set_page_config(page_title="Indian Stocks Forecast Pro", page_icon="📈", layout="wide")
 
@@ -59,6 +58,38 @@ button[data-baseweb="tab"][aria-selected="true"] {
 }
 ::-webkit-scrollbar { width: 10px; }
 ::-webkit-scrollbar-thumb { background: #334155; border-radius: 999px; }
+.suggestion-box {
+    background: rgba(15, 23, 42, 0.92);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 14px;
+    padding: 0.35rem;
+    margin-top: 0.35rem;
+}
+.suggestion-item {
+    width: 100%;
+    text-align: left;
+    border: 1px solid rgba(255,255,255,0.06);
+    background: rgba(30, 41, 59, 0.7);
+    color: #e5e7eb;
+    padding: 0.5rem 0.75rem;
+    border-radius: 10px;
+    margin-bottom: 0.35rem;
+    cursor: pointer;
+}
+.suggestion-item:hover {
+    border-color: rgba(56,189,248,0.45);
+    background: rgba(56,189,248,0.12);
+}
+.badge {
+    display: inline-block;
+    padding: 0.22rem 0.55rem;
+    border-radius: 999px;
+    font-size: 0.78rem;
+    margin-left: 0.35rem;
+    background: rgba(56,189,248,0.14);
+    border: 1px solid rgba(56,189,248,0.22);
+    color: #bae6fd;
+}
 </style>
 """,
     unsafe_allow_html=True,
@@ -91,7 +122,6 @@ def load_stock_universe():
             tmp["symbol"] = nse["SYMBOL"].astype(str).str.strip()
             tmp["ticker"] = tmp["symbol"] + ".NS"
             tmp["exchange"] = "NSE"
-            tmp["display"] = tmp["company"] + " | " + tmp["exchange"] + " | " + tmp["ticker"]
             frames.append(tmp)
     except Exception:
         pass
@@ -106,41 +136,88 @@ def load_stock_universe():
             tmp["symbol"] = bse[cols["security code"]].astype(str).str.strip()
             tmp["ticker"] = tmp["symbol"] + ".BO"
             tmp["exchange"] = "BSE"
-            tmp["display"] = tmp["company"] + " | " + tmp["exchange"] + " | " + tmp["ticker"]
             frames.append(tmp)
     except Exception:
         pass
 
     if not frames:
-        return pd.DataFrame(columns=["company", "symbol", "ticker", "exchange", "display"])
+        return pd.DataFrame(columns=["company", "symbol", "ticker", "exchange"])
 
     uni = pd.concat(frames, ignore_index=True).drop_duplicates(subset=["ticker"])
     uni = uni.sort_values(["company", "exchange"]).reset_index(drop=True)
     return uni
 
-universe = load_stock_universe()
+@st.cache_data(ttl=24 * 60 * 60)
+def load_ticker_map():
+    uni = load_stock_universe().copy()
+    if uni.empty:
+        return uni
+    uni["display"] = uni["company"].fillna(uni["symbol"]).astype(str) + " | " + uni["exchange"].astype(str) + " | " + uni["ticker"].astype(str)
+    return uni
 
-def search_stocks(query: str):
+universe = load_ticker_map()
+
+if "search_text" not in st.session_state:
+    st.session_state.search_text = ""
+if "selected_display" not in st.session_state:
+    st.session_state.selected_display = ""
+if "main_ticker" not in st.session_state:
+    st.session_state.main_ticker = "TCS.NS"
+if "selected_company" not in st.session_state:
+    st.session_state.selected_company = "TCS"
+if "selected_exchange" not in st.session_state:
+    st.session_state.selected_exchange = "NSE"
+
+def set_selected(display):
+    st.session_state.selected_display = display
+    match = universe[universe["display"] == display].head(1)
+    if not match.empty:
+        st.session_state.main_ticker = match["ticker"].iloc[0]
+        st.session_state.selected_company = match["company"].iloc[0]
+        st.session_state.selected_exchange = match["exchange"].iloc[0]
+
+def suggestion_matches(query):
     if universe.empty:
-        return []
+        return pd.DataFrame()
     q = (query or "").lower().strip()
     if not q:
-        return universe.head(20)["display"].tolist()
+        return universe.head(12)
     mask = (
         universe["company"].astype(str).str.lower().str.contains(q, na=False)
         | universe["symbol"].astype(str).str.lower().str.contains(q, na=False)
         | universe["ticker"].astype(str).str.lower().str.contains(q, na=False)
     )
-    return universe.loc[mask, "display"].head(15).tolist()
+    return universe.loc[mask].head(12)
 
 with st.sidebar:
-    st.header("Controls")
-    selected_display = st_searchbox(
-        search_function=search_stocks,
-        placeholder="Search Indian stocks: name, symbol, or ticker...",
-        key="stock_searchbox",
+    st.header("Search stock")
+    st.text_input(
+        "Type company name, symbol, or ticker",
+        key="search_text",
+        placeholder="e.g. Reliance, TCS, 500325, INFY.NS",
+        label_visibility="collapsed",
     )
-    selected_row = universe[universe["display"] == selected_display].head(1) if selected_display and not universe.empty else pd.DataFrame()
+
+    matches = suggestion_matches(st.session_state.search_text)
+
+    if not matches.empty:
+        st.markdown('<div class="suggestion-box">', unsafe_allow_html=True)
+        for _, row in matches.iterrows():
+            label = f"{row['company']} | {row['exchange']} | {row['ticker']}"
+            if st.button(label, key=f"sel_{row['ticker']}"):
+                set_selected(row["display"])
+                st.rerun()
+        st.markdown("</div>", unsafe_allow_html=True)
+    else:
+        st.caption("Type to see suggestions.")
+
+    if st.session_state.selected_display:
+        st.markdown(
+            f"Selected: **{st.session_state.selected_company}** <span class='badge'>{st.session_state.selected_exchange}</span> <span class='badge'>{st.session_state.main_ticker}</span>",
+            unsafe_allow_html=True,
+        )
+    else:
+        st.markdown("Selected: **TCS** <span class='badge'>NSE</span> <span class='badge'>TCS.NS</span>", unsafe_allow_html=True)
 
     period = st.selectbox("History", ["5y", "3y", "2y", "1y"], index=0)
     interval = st.selectbox("Interval", ["1d", "1wk"], index=0)
@@ -411,16 +488,8 @@ def support_resistance(df):
             pivots.append(("Support", float(l), d["Date"].iloc[i]))
     return pd.DataFrame(pivots, columns=["Type", "Level", "Date"]) if pivots else pd.DataFrame(columns=["Type", "Level", "Date"])
 
-if selected_row is not None and not selected_row.empty:
-    main_ticker = selected_row["ticker"].iloc[0]
-    selected_company = selected_row["company"].iloc[0]
-    selected_exchange = selected_row["exchange"].iloc[0]
-    st.sidebar.success(f"Selected: {selected_company} ({selected_exchange}) → {main_ticker}")
-else:
-    main_ticker = "TCS.NS"
-    st.sidebar.info("Search and select a stock above.")
-
 if run_btn:
+    main_ticker = st.session_state.main_ticker
     base = download_stock(main_ticker, period, interval)
     if base.empty:
         st.error(f"No valid price data returned for {main_ticker}.")
@@ -537,16 +606,14 @@ if run_btn:
         if "ETS" in forecast_df.columns:
             fig.add_trace(go.Scatter(x=forecast_df.index, y=forecast_df["ETS"], name="ETS", line=dict(color="#22c55e", width=3, dash="dot")))
         if "ARIMA_Lower" in forecast_df.columns and "ARIMA_Upper" in forecast_df.columns:
-            fig.add_trace(
-                go.Scatter(
-                    x=forecast_df.index.tolist() + forecast_df.index[::-1].tolist(),
-                    y=forecast_df["ARIMA_Upper"].tolist() + forecast_df["ARIMA_Lower"][::-1].tolist(),
-                    fill="toself",
-                    fillcolor="rgba(239,68,68,0.16)",
-                    line=dict(color="rgba(255,255,255,0)"),
-                    name="ARIMA 95% CI",
-                )
-            )
+            fig.add_trace(go.Scatter(
+                x=forecast_df.index.tolist() + forecast_df.index[::-1].tolist(),
+                y=forecast_df["ARIMA_Upper"].tolist() + forecast_df["ARIMA_Lower"][::-1].tolist(),
+                fill="toself",
+                fillcolor="rgba(239,68,68,0.16)",
+                line=dict(color="rgba(255,255,255,0)"),
+                name="ARIMA 95% CI"
+            ))
         fig.update_layout(height=550, template="plotly_dark")
         st.plotly_chart(fig, use_container_width=True)
 
@@ -576,23 +643,22 @@ if run_btn:
     with t4:
         st.subheader("Compare selected stocks")
         rows = []
-        for t in tickers[:10]:
+        for t in [st.session_state.main_ticker]:
             d = download_stock(t, period, interval)
             if d.empty:
                 continue
             d = add_indicators(d)
-            rows.append(
-                {
-                    "Ticker": t,
-                    "Last Close": float(d["Close"].iloc[-1]),
-                    "YTD Return %": float((d["Close"].iloc[-1] / d["Close"].iloc[0] - 1) * 100),
-                    "Volatility %": float(d["Return"].rolling(20).std().iloc[-1] * np.sqrt(252) * 100) if pd.notna(d["Return"].rolling(20).std().iloc[-1]) else np.nan,
-                    "Signal": signal_label(d),
-                    "Sentiment": sentiment_label(d),
-                }
-            )
+            rows.append({
+                "Ticker": t,
+                "Last Close": float(d["Close"].iloc[-1]),
+                "YTD Return %": float((d["Close"].iloc[-1] / d["Close"].iloc[0] - 1) * 100),
+                "Volatility %": float(d["Return"].rolling(20).std().iloc[-1] * np.sqrt(252) * 100) if pd.notna(d["Return"].rolling(20).std().iloc[-1]) else np.nan,
+                "Signal": signal_label(d),
+                "Sentiment": sentiment_label(d),
+            })
         comp = pd.DataFrame(rows)
         st.dataframe(comp, use_container_width=True)
+
         if not comp.empty:
             fig = go.Figure()
             fig.add_trace(go.Bar(x=comp["Ticker"], y=comp["YTD Return %"], name="YTD Return %"))
