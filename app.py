@@ -7,6 +7,7 @@ from statsmodels.tsa.arima.model import ARIMA
 from statsmodels.tsa.holtwinters import ExponentialSmoothing
 from sklearn.metrics import mean_absolute_error, mean_squared_error
 from math import sqrt
+from streamlit_searchbox import st_searchbox
 
 st.set_page_config(page_title="Indian Stocks Forecast Pro", page_icon="📈", layout="wide")
 
@@ -77,10 +78,70 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+@st.cache_data(ttl=24 * 60 * 60)
+def load_stock_universe():
+    frames = []
+
+    try:
+        nse = pd.read_csv("https://nsearchives.nseindia.com/content/equities/sec_list.csv")
+        nse.columns = [c.strip() for c in nse.columns]
+        if "SYMBOL" in nse.columns:
+            tmp = pd.DataFrame()
+            tmp["company"] = nse["NAME OF COMPANY"].astype(str).str.strip() if "NAME OF COMPANY" in nse.columns else nse["SYMBOL"].astype(str).str.strip()
+            tmp["symbol"] = nse["SYMBOL"].astype(str).str.strip()
+            tmp["ticker"] = tmp["symbol"] + ".NS"
+            tmp["exchange"] = "NSE"
+            tmp["display"] = tmp["company"] + " | " + tmp["exchange"] + " | " + tmp["ticker"]
+            frames.append(tmp)
+    except Exception:
+        pass
+
+    try:
+        bse = pd.read_csv("https://www.bseindia.com/download/BhavCopy/eqiscrip.csv")
+        bse.columns = [c.strip() for c in bse.columns]
+        cols = {c.lower(): c for c in bse.columns}
+        if "security code" in cols and "security name" in cols:
+            tmp = pd.DataFrame()
+            tmp["company"] = bse[cols["security name"]].astype(str).str.strip()
+            tmp["symbol"] = bse[cols["security code"]].astype(str).str.strip()
+            tmp["ticker"] = tmp["symbol"] + ".BO"
+            tmp["exchange"] = "BSE"
+            tmp["display"] = tmp["company"] + " | " + tmp["exchange"] + " | " + tmp["ticker"]
+            frames.append(tmp)
+    except Exception:
+        pass
+
+    if not frames:
+        return pd.DataFrame(columns=["company", "symbol", "ticker", "exchange", "display"])
+
+    uni = pd.concat(frames, ignore_index=True).drop_duplicates(subset=["ticker"])
+    uni = uni.sort_values(["company", "exchange"]).reset_index(drop=True)
+    return uni
+
+universe = load_stock_universe()
+
+def search_stocks(query: str):
+    if universe.empty:
+        return []
+    q = (query or "").lower().strip()
+    if not q:
+        return universe.head(20)["display"].tolist()
+    mask = (
+        universe["company"].astype(str).str.lower().str.contains(q, na=False)
+        | universe["symbol"].astype(str).str.lower().str.contains(q, na=False)
+        | universe["ticker"].astype(str).str.lower().str.contains(q, na=False)
+    )
+    return universe.loc[mask, "display"].head(15).tolist()
+
 with st.sidebar:
     st.header("Controls")
-    tickers_input = st.text_area("Indian stock tickers (one per line)", value="TCS.NS\nINFY.NS\nRELIANCE.NS")
-    tickers = [t.strip().upper() for t in tickers_input.splitlines() if t.strip()]
+    selected_display = st_searchbox(
+        search_function=search_stocks,
+        placeholder="Search Indian stocks: name, symbol, or ticker...",
+        key="stock_searchbox",
+    )
+    selected_row = universe[universe["display"] == selected_display].head(1) if selected_display and not universe.empty else pd.DataFrame()
+
     period = st.selectbox("History", ["5y", "3y", "2y", "1y"], index=0)
     interval = st.selectbox("Interval", ["1d", "1wk"], index=0)
     forecast_days = st.slider("Forecast horizon (trading days)", 5, 252, 60)
@@ -350,15 +411,19 @@ def support_resistance(df):
             pivots.append(("Support", float(l), d["Date"].iloc[i]))
     return pd.DataFrame(pivots, columns=["Type", "Level", "Date"]) if pivots else pd.DataFrame(columns=["Type", "Level", "Date"])
 
-if run_btn:
-    if not tickers:
-        st.error("Add at least one ticker.")
-        st.stop()
+if selected_row is not None and not selected_row.empty:
+    main_ticker = selected_row["ticker"].iloc[0]
+    selected_company = selected_row["company"].iloc[0]
+    selected_exchange = selected_row["exchange"].iloc[0]
+    st.sidebar.success(f"Selected: {selected_company} ({selected_exchange}) → {main_ticker}")
+else:
+    main_ticker = "TCS.NS"
+    st.sidebar.info("Search and select a stock above.")
 
-    main_ticker = tickers[0]
+if run_btn:
     base = download_stock(main_ticker, period, interval)
     if base.empty:
-        st.error(f"No valid price data returned for {main_ticker}. Try INFY.NS or RELIANCE.NS.")
+        st.error(f"No valid price data returned for {main_ticker}.")
         st.stop()
 
     base = add_indicators(base)
