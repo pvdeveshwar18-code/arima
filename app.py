@@ -6,7 +6,7 @@ import datetime
 import plotly.graph_objects as go
 
 # ==========================================================
-# 1. PREMIUM GLASSMORPHISM SYSTEM DESIGN (XERCES CORE)
+# 1. XERCES UI ENGINE & GLASSMORPHISM CONTAINER SYSTEM
 # ==========================================================
 st.set_page_config(page_title="XERCES // QUANT ENGINE", page_icon="⚡", layout="wide")
 
@@ -29,7 +29,7 @@ section[data-testid="stSidebar"] {
     border-right: 1px solid rgba(0, 200, 255, 0.15) !important;
 }
 
-/* XERCES Cyberpunk Branding Headers */
+/* Typography Accents */
 .xerces-title {
     font-family: 'Orbitron', sans-serif;
     font-weight: 900;
@@ -51,30 +51,38 @@ section[data-testid="stSidebar"] {
 .section-header {
     font-family: 'Orbitron', sans-serif;
     color: #00c8ff;
-    font-size: 14px;
+    font-size: 13px;
     letter-spacing: 1px;
-    margin-top: 10px;
-    margin-bottom: 15px;
+    margin-top: 15px;
+    margin-bottom: 10px;
 }
 
-/* Glassmorphism Metrics Dashboard Cards */
+/* Glassmorphism Dashboard Cards matching image layout */
 .glass-card {
     background: rgba(7, 18, 32, 0.65);
     border: 1px solid rgba(0, 200, 255, 0.15);
-    border-radius: 6px;
-    padding: 14px;
+    border-radius: 4px;
+    padding: 12px 16px;
     margin-bottom: 10px;
     box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.4);
     backdrop-filter: blur(4px);
 }
+.glass-label {
+    font-family: 'Space Mono', monospace;
+    color: #6a90aa;
+    font-size: 10px;
+    margin: 0;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
 .glass-value {
     font-family: 'Orbitron', sans-serif;
-    font-size: 1.5rem;
+    font-size: 1.4rem;
     font-weight: 700;
     margin-top: 2px;
 }
 
-/* Custom Styled Interactive Tabs */
+/* Tab Navigation Matrix Overrides */
 div[data-baseweb="tab-list"] { gap: 4px; }
 button[data-baseweb="tab"] {
     font-family: 'Space Mono', monospace !important;
@@ -99,8 +107,8 @@ button[data-baseweb="tab"][aria-selected="true"] {
 # ==========================================================
 col_title, col_clock = st.columns([2, 1])
 with col_title:
-    st.markdown('<h1 class="xerces-title">XERCES // CORES V2</h1>', unsafe_allow_html=True)
-    st.markdown('<p class="telemetry-tag">[ RADAR PROBE: ACTIVE // FIVE-FACTOR SYSTEM CHANNELS ONLINE ]</p>', unsafe_allow_html=True)
+    st.markdown('<h1 class="xerces-title">XERCES // QUANT CORES</h1>', unsafe_allow_html=True)
+    st.markdown('<p class="telemetry-tag">[ RADAR PROBE: ACTIVE // TELEMETRY FRAME INTEGRATED ]</p>', unsafe_allow_html=True)
 
 with col_clock:
     current_time = datetime.datetime.now().strftime("%H:%M:%S UTC")
@@ -167,8 +175,8 @@ if "last_scan_data" not in st.session_state:
 with st.sidebar:
     st.markdown("<p class='telemetry-tag' style='color:#00c8ff; font-weight:700; margin-bottom:5px;'>[ 🛡️ RISK MATRIX CONTROLS ]</p>", unsafe_allow_html=True)
     allocated_capital = st.number_input("Capital Pool (₹)", min_value=1000, value=100000, step=5000)
-    risk_per_trade = st.slider("Max Capital Sizing Risk (%)", 0.5, 5.0, 1.5, step=0.1)
-    risk_reward_ratio = st.slider("Target Risk Ratio Vector (1:X)", 1.5, 4.0, 2.0, step=0.5)
+    risk_per_trade = st.slider("Max Sizing Risk (%)", 0.5, 5.0, 1.5, step=0.1)
+    risk_reward_ratio = st.slider("Risk Vector (1:X)", 1.5, 4.0, 2.0, step=0.5)
     
     st.markdown("---")
     st.markdown("<p class='telemetry-tag' style='color:#00c8ff; font-weight:700; margin-bottom:5px;'>[ 📡 MULTI-STOCK RUN ENGINE ]</p>", unsafe_allow_html=True)
@@ -222,10 +230,10 @@ with st.sidebar:
             
         if scan_results:
             st.session_state.last_scan_data = scan_results
-            st.sidebar.success("XERCES scan completed successfully.")
+            st.sidebar.success("XERCES matrix updated completely.")
 
 # ==========================================================
-# 5. ALL 5 HIGH-LEVEL CLEAN APPLICATION WORKSPACE TABS
+# 5. WORKSPACE NAVIGATION CHANNELS
 # ==========================================================
 view_tab, backtest_tab, paper_tab, settings_tab, help_tab = st.tabs([
     "🔍 TERMINAL ANALYSIS", 
@@ -236,7 +244,4 @@ view_tab, backtest_tab, paper_tab, settings_tab, help_tab = st.tabs([
 ])
 
 # ----------------------------------------------------------
-# TAB 1: INDIVIDUAL CHART TERMINAL & MULTI-STOCK RESULTS
-# ----------------------------------------------------------
-with view_tab:
-    selected_ticker = st.selectbox("SELECT TERMINAL PROBE TARGET", options=universe
+# TAB 1: TERMINAL INTER
