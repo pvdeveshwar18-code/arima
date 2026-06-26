@@ -5,73 +5,50 @@ import numpy as np
 import time
 import plotly.graph_objects as go
 
-st.set_page_config(page_title="Alpha Surge — Smart Money Engine v2", page_icon="⚡", layout="wide")
+# Keeping your original professional app title
+st.set_page_config(page_title="Indian Stocks Forecast Pro", page_icon="📈", layout="wide")
 
 # ==========================================================
-# FRIENDS DESIGN SYSTEM: CYBERPUNK CSS INJECTION
+# TAILORED DESIGN SYSTEM: PREMIUM ACCENTS ONLY
 # ==========================================================
 st.markdown(
     """
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Space+Mono&family=Inter:wght@300;400;600;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&family=Space+Mono&display=swap');
 html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
 
-/* Global Base Theme Styling */
+/* Elegant Custom Cyber-Dark Canvas background */
 .stApp {
-    background: linear-gradient(180deg, #020b14 0%, #071220 100%) !important;
-    color: #ddeeff !important;
+    background: linear-gradient(180deg, #030914 0%, #0a1124 100%) !important;
+    color: #e2e8f0 !important;
 }
 section[data-testid="stSidebar"] {
-    background: rgba(2, 11, 20, 0.85) !important;
-    border-right: 1px solid rgba(0, 200, 255, 0.1) !important;
+    background: rgba(6, 11, 26, 0.85) !important;
+    border-right: 1px solid rgba(0, 212, 170, 0.1) !important;
 }
 
-/* Typography Overrides */
-h1, h2, h3 { font-family: 'Orbitron', sans-serif !important; letter-spacing: 2px; }
-code, pre { font-family: 'Space Mono', monospace !important; }
-
-/* Custom Premium Sidebar Inputs */
-.stNumericInput input, .stSelectbox div {
-    background: #0a1928 !important;
-    color: #ddeeff !important;
-    border: 1px solid rgba(0, 200, 255, 0.2) !important;
+/* Premium custom card layouts to replace stock text components */
+.accent-card {
+    background: #0d162d;
+    border: 1px solid rgba(0, 212, 170, 0.15);
+    border-radius: 8px;
+    padding: 16px;
+    margin-bottom: 12px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.3);
 }
 
-/* Neon Components & Card Frames */
-.premium-card {
-    background: #071220;
-    border: 1px solid rgba(0, 200, 255, 0.1);
-    border-radius: 10px;
-    padding: 18px;
-    margin-bottom: 15px;
-    box-shadow: 0 4px 25px rgba(0,0,0,0.4);
+/* Tab Bar Adjustments */
+div[data-baseweb="tab-list"] { gap: 8px; }
+button[data-baseweb="tab"] {
+    border-radius: 6px !important;
+    padding: 0.5rem 1.2rem !important;
+    background: #0d162d !important;
+    color: #94a3b8 !important;
+    border: 1px solid rgba(255,255,255,0.05) !important;
 }
-.premium-card:hover {
-    border-color: rgba(0, 200, 255, 0.3);
-    box-shadow: 0 0 15px rgba(0, 200, 255, 0.15);
-}
-
-/* Ticker Marquee CSS Animation */
-.marquee-container {
-    background: rgba(0,0,0,0.5);
-    border-bottom: 1px solid rgba(0,200,255,0.15);
-    overflow: hidden;
-    padding: 6px 0;
-    white-space: nowrap;
-}
-.marquee-track {
-    display: inline-block;
-    animation: marquee 35s linear infinite;
-}
-@keyframes marquee {
-    0% { transform: translate3d(0, 0, 0); }
-    100% { transform: translate3d(-50%, 0, 0); }
-}
-.marquee-item {
-    display: inline-block;
-    margin-right: 40px;
-    font-family: 'Space Mono', monospace;
-    font-size: 11px;
+button[data-baseweb="tab"][aria-selected="true"] {
+    border-color: #00d4aa !important;
+    color: #00d4aa !important;
 }
 </style>
 """,
@@ -79,46 +56,24 @@ code, pre { font-family: 'Space Mono', monospace !important; }
 )
 
 # ==========================================================
-# INTRODUCTORY INTERSTITIAL ENGINE MOCK LOADER
+# APP APPLICATION MAIN HEADER
 # ==========================================================
-if "app_loaded" not in st.session_state:
-    st.session_state.app_loaded = False
-
-if not st.session_state.app_loaded:
-    load_placeholder = st.empty()
-    steps = [
-        "Connecting to Financial Core Gateways...",
-        "Fetching real-time asset universe quotes...",
-        "Running multi-factor tactical engine...",
-        "Compiling active risk & sizing metrics...",
-        "Ready ✅"
-    ]
-    
-    for idx, step_msg in enumerate(steps):
-        progress_pct = int(((idx + 1) / len(steps)) * 100)
-        with load_placeholder.container():
-            st.markdown("<br><br><br><br><br>", unsafe_allow_html=True)
-            st.markdown(
-                f"""
-                <div style='text-align: center;'>
-                    <h2 style='color: #00c8ff; font-size: 32px; font-weight: 900;'>ALPHA SURGE</h2>
-                    <p style='font-family: "Space Mono", monospace; color: #4a7090;'>SMART MONEY ENGINE v2</p>
-                    <div style='width: 320px; background: rgba(255,255,255,0.05); height: 4px; border-radius: 2px; margin: 20px auto; overflow: hidden;'>
-                        <div style='width: {progress_pct}%; background: linear-gradient(90deg, #00c8ff, #7c4dff); height: 100%; transition: width 0.3s;'></div>
-                    </div>
-                    <p style='font-family: "Space Mono", monospace; font-size: 11px; color: #6a90aa;'>{step_msg}</p>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-        time.sleep(0.35)
-    
-    st.session_state.app_loaded = True
-    load_placeholder.empty()
-    st.rerun()
+st.markdown(
+    """
+<div style="margin-bottom: 1.5rem; border-bottom: 1px solid rgba(0, 212, 170, 0.15); padding-bottom: 0.75rem;">
+    <h1 style="margin:0; font-size:2.2rem; font-weight:800; background: linear-gradient(90deg, #00d4aa, #38bdf8); -webkit-background-clip:text; -webkit-text-fill-color:transparent;">
+        Indian Stocks Forecast Pro
+    </h1>
+    <p style="margin:0.2rem 0 0 0; color: #94a3b8; font-size: 0.95rem;">
+        Advanced algorithmic position evaluation & whole-market risk scanning.
+    </p>
+</div>
+""",
+    unsafe_allow_html=True,
+)
 
 # ==========================================================
-# MEMORY LAYER, INDICATORS & TICKER SELECTION OBJECTS
+# PERSISTENT STORAGE LAYER & DATA UTILITIES
 # ==========================================================
 if "cached_batch_data" not in st.session_state:
     st.session_state.cached_batch_data = None
@@ -127,17 +82,14 @@ if "cached_timestamp" not in st.session_state:
 
 @st.cache_data(ttl=86400)
 def load_stock_universe():
-    # Elite liquid listings across core sectors of the Indian economy (NSE)
     nse_symbols = [
         "RELIANCE", "TCS", "HDFCBANK", "INFY", "SBIN", "ICICIBANK", "BHARTIARTL", "LTIM", "ITC", "LT",
-        "HINDUNILVR", "BAJFINANCE", "TATAMOTORS", "AXISBANK", "WIPRO", "HCLTECH", "SUNPHARMA", "NTPC",
-        "POWERGRID", "TITAN", "COALINDIA", "ONGC", "ADANIENT", "JIOFIN", "TATASTEEL", "ULTRACEMCO"
+        "HINDUNILVR", "BAJFINANCE", "TATAMOTORS", "AXISBANK", "WIPRO", "HCLTECH", "SUNPHARMA", "NTPC"
     ]
     data = {
-        "company": [f"{sym} Traded Security" for sym in nse_symbols],
+        "company": [f"{sym} Listing" for sym in nse_symbols],
         "symbol": nse_symbols,
         "ticker": [f"{sym}.NS" for sym in nse_symbols],
-        "exchange": ["NSE"] * len(nse_symbols)
     }
     uni = pd.DataFrame(data)
     uni["display"] = uni["symbol"] + " | " + uni["company"]
@@ -171,81 +123,36 @@ def get_signal(df):
     return "HOLD"
 
 # ==========================================================
-# APPLICATION HEADER FRAME
-# ==========================================================
-st.markdown(
-    """
-    <div style='display: flex; justify-content: space-between; align-items: center; padding: 10px 0;'>
-        <div>
-            <span style='font-family: "Orbitron", sans-serif; font-size: 20px; font-weight: 900; color: #00c8ff;'>ALPHA SURGE</span>
-            <span style='font-family: "Space Mono", monospace; font-size: 10px; color: #4a7090; margin-left: 10px;'>SMART MONEY ENGINE v2</span>
-        </div>
-        <div style='font-family: "Space Mono", monospace; font-size: 11px; color: #00e87a;'>
-            ● REGULATED MARKET CORE CONNECTED
-        </div>
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
-
-# Ticker Tape Marquee
-st.markdown(
-    """
-    <div class="marquee-container">
-        <div class="marquee-track">
-            <span class="marquee-item"><span style="color:#00c8ff">RELIANCE</span> ₹2,450.20 <span style="color:#00e87a">+1.4%</span></span>
-            <span class="marquee-item"><span style="color:#00c8ff">TCS</span> ₹3,890.40 <span style="color:#ff3355">-0.8%</span></span>
-            <span class="marquee-item"><span style="color:#00c8ff">HDFCBANK</span> ₹1,610.15 <span style="color:#00e87a">+2.1%</span></span>
-            <span class="marquee-item"><span style="color:#00c8ff">INFY</span> ₹1,480.60 <span style="color:#ff3355">-1.2%</span></span>
-            <span class="marquee-item"><span style="color:#00c8ff">SBIN</span> ₹725.40 <span style="color:#00e87a">+0.5%</span></span>
-            <span class="marquee-item"><span style="color:#00c8ff">RELIANCE</span> ₹2,450.20 <span style="color:#00e87a">+1.4%</span></span>
-            <span class="marquee-item"><span style="color:#00c8ff">TCS</span> ₹3,890.40 <span style="color:#ff3355">-0.8%</span></span>
-        </div>
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
-
-# ==========================================================
-# CONTROL CONSOLE SIDEBAR
+# SIDEBAR CONTROL PANEL
 # ==========================================================
 with st.sidebar:
-    st.markdown("<h3 style='color: #00c8ff; font-size: 14px;'>⚙️ CONTROL CONSOLE</h3>", unsafe_allow_html=True)
-    allocated_capital = st.number_input("Trade Allocation (₹)", min_value=1000, value=100000, step=5000)
-    risk_per_trade = st.slider("Trade Max Sizing Risk (%)", 0.5, 5.0, 1.5, step=0.1)
-    risk_reward_ratio = st.slider("Target Profit Matrix (1:X)", 1.5, 4.0, 2.0, step=0.5)
+    st.markdown("<h3 style='color: #00d4aa; font-size: 14px; margin-top:0;'>🛡️ RISK PARAMETERS</h3>", unsafe_allow_html=True)
+    allocated_capital = st.number_input("Capital Pool (₹)", min_value=1000, value=100000, step=5000)
+    risk_per_trade = st.slider("Max Sizing Risk (%)", 0.5, 5.0, 1.5, step=0.1)
+    risk_reward_ratio = st.slider("Risk-Reward Ratio (1:X)", 1.5, 4.0, 2.0, step=0.5)
     
     st.markdown("---")
-    st.markdown("<h3 style='color: #00c8ff; font-size: 14px;'>🎛️ HISTORICAL ENGINE</h3>", unsafe_allow_html=True)
-    period = st.selectbox("Interval Backfill Length", ["5y", "3y", "1y"], index=2)
-    interval = st.selectbox("Execution Frame", ["1d", "1wk"], index=0)
+    period = st.selectbox("Historical Window", ["3y", "1y"], index=1)
+    interval = st.selectbox("Interval", ["1d", "1wk"], index=0)
 
-# ==========================================================
-# INTERFACE NAVIGATION TABS
-# ==========================================================
-view_tab, scan_tab, market_tab = st.tabs([
-    "🔍 SINGLE ASSET ANALYSIS", 
-    "🎯 BROAD QUANT SCANNER", 
-    "📊 SYSTEM CORE METRICS"
-])
-
-# ----------------------------------------------------------
-# OPTIMIZATION A: BULK ENGINE DATA CACHE COMPILATION
-# ----------------------------------------------------------
+# --- BACKGROUND DATA SYNC (FIXED: replaced NULL with None) ---
 all_tickers = universe["ticker"].tolist()
-if st.session_state.cached_batch_data is NULL or st.sidebar.button("🔄 FORCE RE-DOWNLOAD DATA POOL"):
-    with st.spinner("Executing Vectorized Multi-Download Stream..."):
+if st.session_state.cached_batch_data is None or st.sidebar.button("🔄 Sync Market Data"):
+    with st.spinner("Downloading updated asset feeds..."):
         try:
             st.session_state.cached_batch_data = yf.download(all_tickers, period="1y", interval="1d", group_by='ticker', auto_adjust=False, progress=False)
             st.session_state.cached_timestamp = time.strftime("%H:%M:%S")
         except Exception as e:
-            st.error(f"Global download execution block interrupted: {e}")
+            st.error(f"Sync error: {e}")
 
-# ----------------------------------------------------------
-# TAB 1: SINGLE ASSET FOCUS ANALYTICS
-# ----------------------------------------------------------
+# ==========================================================
+# MAIN INTERFACE TABS
+# ==========================================================
+view_tab, scan_tab, summary_tab = st.tabs(["🔍 ASSET VIEW", "🎯 QUANT SCANNER", "📊 BENCHMARK METRICS"])
+
+# TAB 1: ASSET DEEP DIVE
 with view_tab:
-    selected_display = st.selectbox("Select Target Core Instrument", options=universe["display"].tolist(), index=0)
+    selected_display = st.selectbox("Select Target Security", options=universe["display"].tolist(), index=0)
     ticker_symbol = universe[universe["display"] == selected_display].iloc[0]["ticker"]
     
     raw_data = st.session_state.cached_batch_data
@@ -262,38 +169,34 @@ with view_tab:
                 last_close = float(last_row["Close"])
                 signal = get_signal(df)
                 
+                # Balanced Metric Panels with soft green accents
                 m1, m2, m3, m4 = st.columns(4)
                 with m1:
-                    st.markdown(f'<div class="premium-card"><p style="color:#4a7090; font-size:10px; margin:0;">LAST PRICE</p><h3 style="color:#ddeeff; margin:5px 0 0 0;">₹{last_close:,.2f}</h3></div>', unsafe_allow_html=True)
+                    st.markdown(f'<div class="accent-card"><p style="color:#64748b; font-size:11px; margin:0;">LAST PRICE</p><h3 style="color:#f8fafc; margin:4px 0 0 0;">₹{last_close:,.2f}</h3></div>', unsafe_allow_html=True)
                 with m2:
-                    st.markdown(f'<div class="premium-card"><p style="color:#4a7090; font-size:10px; margin:0;">RSI SYSTEM (14)</p><h3 style="color:#00c8ff; margin:5px 0 0 0;">{last_row["RSI_14"]:.1f}</h3></div>', unsafe_allow_html=True)
+                    st.markdown(f'<div class="accent-card"><p style="color:#64748b; font-size:11px; margin:0;">RSI (14)</p><h3 style="color:#38bdf8; margin:4px 0 0 0;">{last_row["RSI_14"]:.1f}</h3></div>', unsafe_allow_html=True)
                 with m3:
-                    color_map = {"BUY": "#00e87a", "SELL": "#ff3355", "HOLD": "#ffcc00"}
-                    st.markdown(f'<div class="premium-card"><p style="color:#4a7090; font-size:10px; margin:0;">TACTICAL BIAS</p><h3 style="color:{color_map.get(signal, "#fff")}; margin:5px 0 0 0;">{signal}</h3></div>', unsafe_allow_html=True)
+                    color_map = {"BUY": "#00d4aa", "SELL": "#f43f5e", "HOLD": "#eab308"}
+                    st.markdown(f'<div class="accent-card"><p style="color:#64748b; font-size:11px; margin:0;">BIAS</p><h3 style="color:{color_map.get(signal)}; margin:4px 0 0 0;">{signal}</h3></div>', unsafe_allow_html=True)
                 with m4:
                     vol = last_row["Volatility_20"] if pd.notna(last_row["Volatility_20"]) else 0.0
-                    st.markdown(f'<div class="premium-card"><p style="color:#4a7090; font-size:10px; margin:0;">ANNUALIZED VOLATILITY</p><h3 style="color:#7c4dff; margin:5px 0 0 0;">{vol:.1%}</h3></div>', unsafe_allow_html=True)
+                    st.markdown(f'<div class="accent-card"><p style="color:#64748b; font-size:11px; margin:0;">ANNUALIZED VOLATILITY</p><h3 style="color:#a78bfa; margin:4px 0 0 0;">{vol:.1%}</h3></div>', unsafe_allow_html=True)
                     
                 fig = go.Figure()
-                fig.add_trace(go.Scatter(x=df["Date"], y=df["Close"], name="Close Price", line=dict(color="#00c8ff", width=2)))
-                if "SMA_20" in df.columns:
-                    fig.add_trace(go.Scatter(x=df["Date"], y=df["SMA_20"], name="SMA 20", line=dict(color="#00e87a", width=1.5, dash="dash")))
+                fig.add_trace(go.Scatter(x=df["Date"], y=df["Close"], name="Close", line=dict(color="#00d4aa", width=2)))
                 fig.update_layout(
-                    margin=dict(l=20, r=20, t=20, b=20), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                    font=dict(color="#ddeeff"), height=400,
-                    xaxis=dict(gridcolor="rgba(0,200,255,0.05)"), yaxis=dict(gridcolor="rgba(0,200,255,0.05)")
+                    margin=dict(l=10, r=10, t=10, b=10), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                    font=dict(color="#e2e8f0"), height=380,
+                    xaxis=dict(gridcolor="rgba(255,255,255,0.05)"), yaxis=dict(gridcolor="rgba(255,255,255,0.05)")
                 )
                 st.plotly_chart(fig, use_container_width=True)
         except Exception as e:
-            st.error(f"Asset compiling fault: {e}")
+            st.error(f"Error compiling asset chart data: {e}")
 
-# ----------------------------------------------------------
-# TAB 2: INSTANT CALCULATING BROAD QUANT SCANNER
-# ----------------------------------------------------------
+# TAB 2: PORTFOLIO QUANT SCANNER
 with scan_tab:
-    st.markdown("<h3 style='font-size:16px;'>🚀 WHOLE-MARKET POSITION INSTANT MATRIX</h3>", unsafe_allow_html=True)
     if st.session_state.cached_timestamp:
-        st.markdown(f"<p style='font-size:11px; color:#4a7090; font-family:\"Space Mono\";'>Memory Cache Active. Last download anchor: {st.session_state.cached_timestamp}</p>", unsafe_allow_html=True)
+        st.markdown(f"<p style='font-size:11px; color:#64748b; font-family:\"Space Mono\";'>Session cache active. Last update: {st.session_state.cached_timestamp}</p>", unsafe_allow_html=True)
         
     raw_batch = st.session_state.cached_batch_data
     if raw_batch is not None:
@@ -320,32 +223,26 @@ with scan_tab:
                 units = int(capital_at_risk // (atr * 1.5)) if atr > 0 else 0
                 
                 scan_results.append({
-                    "Asset Ticker": ticker.replace(".NS", ""),
-                    "Current Quote": f"₹{c_price:,.2f}",
+                    "Ticker": ticker.replace(".NS", ""),
+                    "Price": f"₹{c_price:,.2f}",
                     "RSI": f"{last_s_row['RSI_14']:.1f}",
-                    "System Signal": sig,
-                    "Allocation Units": f"{units} Share Units",
-                    "Stop-Loss Threshold": f"₹{sl_val:,.2f}",
-                    "Target Take-Profit": f"₹{tp_val:,.2f}"
+                    "Signal": sig,
+                    "Target Size": f"{units} Units",
+                    "Stop-Loss": f"₹{sl_val:,.2f}",
+                    "Take-Profit": f"₹{tp_val:,.2f}"
                 })
             except:
                 continue
                 
         if scan_results:
             df_final = pd.DataFrame(scan_results)
-            b_tab, e_tab, m_tab = st.tabs([f"🟢 Active Buys ({len(df_final[df_final['System Signal']=='BUY'])})", f"🔴 Active Exits ({len(df_final[df_final['System Signal']=='SELL'])})", "🌐 Full Tracker Frame"])
-            with b_tab: st.dataframe(df_final[df_final["System Signal"] == "BUY"], use_container_width=True, hide_index=True)
-            with e_tab: st.dataframe(df_final[df_final["System Signal"] == "SELL"], use_container_width=True, hide_index=True)
-            with m_tab: st.dataframe(df_final, use_container_width=True, hide_index=True)
+            st.dataframe(df_final, use_container_width=True, hide_index=True)
 
-# ----------------------------------------------------------
-# TAB 3: DYNAMIC SECTOR HEATMAP & MOMENTUM ENGINE
-# ----------------------------------------------------------
-with market_tab:
+# TAB 3: DYNAMIC SECTOR METRICS (Preserving Heatmaps & Market Breadth)
+with summary_tab:
     c_left, c_right = st.columns([2, 1])
     raw_batch = st.session_state.cached_batch_data
     
-    # Pre-calculating variables dynamically from our operational pool
     heatmap_data = []
     bullish_nodes = 0
     total_nodes = 0
@@ -359,12 +256,10 @@ with market_tab:
                     df_t = raw_batch.dropna(subset=["Close"])
                 
                 if len(df_t) < 5: continue
-                # Calculation loops
                 close_today = float(df_t["Close"].iloc[-1])
                 close_yesterday = float(df_t["Close"].iloc[-2])
                 pct_change = ((close_today - close_yesterday) / close_yesterday) * 100
                 
-                # Sizing trend metrics for gauge
                 sma20 = df_t["Close"].rolling(20).mean().iloc[-1]
                 if close_today > sma20:
                     bullish_nodes += 1
@@ -373,47 +268,39 @@ with market_tab:
                 heatmap_data.append({
                     "symbol": ticker.replace(".NS", ""),
                     "pct": pct_change,
-                    "txt": "#00e87a" if pct_change >= 0 else "#ff3355",
-                    "bg": "rgba(0, 232, 122, 0.15)" if pct_change >= 0 else "rgba(255, 51, 85, 0.15)"
+                    "txt": "#00d4aa" if pct_change >= 0 else "#f43f5e",
+                    "bg": "rgba(0, 212, 170, 0.1)" if pct_change >= 0 else "rgba(244, 63, 94, 0.1)"
                 })
             except:
                 continue
 
-    # OPTIMIZATION B: LIVE SECTORAL HEATMAP INTERFACE MIGRATION
     with c_left:
-        st.markdown("<h3 style='font-size:15px;'>🎨 DYNAMIC MARKET HEATMAP MATRIX</h3>", unsafe_allow_html=True)
+        st.markdown("<h3 style='font-size:15px; color:#00d4aa;'>🎨 LIQUIDITY PERFORMANCE MATRIX</h3>", unsafe_allow_html=True)
         if heatmap_data:
             h_cols = st.columns(4)
-            for idx, item in enumerate(heatmap_data[:16]): # Limit grid items to fit space
+            for idx, item in enumerate(heatmap_data[:12]):
                 target_col = h_cols[idx % 4]
                 target_col.markdown(
                     f"""
-                    <div style='background: {item["bg"]}; border: 1px solid {item["txt"]}44; padding: 15px; border-radius: 8px; text-align: center; margin-bottom: 10px;'>
-                        <div style='font-family: "Orbitron", sans-serif; font-size: 13px; font-weight: 900;'>{item["symbol"]}</div>
-                        <div style='font-family: "Space Mono", monospace; font-size: 11px; margin-top: 4px; color: {item["txt"]};'>{item["pct"]:+.2f}%</div>
+                    <div style='background: {item["bg"]}; border: 1px solid {item["txt"]}33; padding: 12px; border-radius: 6px; text-align: center; margin-bottom: 8px;'>
+                        <div style='font-weight: 700; font-size: 13px;'>{item["symbol"]}</div>
+                        <div style='font-family: "Space Mono", monospace; font-size: 11px; margin-top: 2px; color: {item["txt"]};'>{item["pct"]:+.2f}%</div>
                     </div>
                     """,
                     unsafe_allow_html=True
                 )
                 
-    # OPTIMIZATION C: DYNAMIC MARKET FEAR & GREED SENTIMENT QUOTIENT GAUGE
     with c_right:
-        st.markdown("<h3 style='font-size:15px;'>📊 SENTIMENT QUOTIENT</h3>", unsafe_allow_html=True)
+        st.markdown("<h3 style='font-size:15px; color:#00d4aa;'>📊 MARKET BREADTH INDEX</h3>", unsafe_allow_html=True)
         sentiment_score = int((bullish_nodes / total_nodes) * 100) if total_nodes > 0 else 50
-        
-        if sentiment_score >= 70: label, hue = "EXTREME GREED", "#00e87a"
-        elif sentiment_score >= 55: label, hue = "TACTICAL GREED", "#00c8ff"
-        elif sentiment_score >= 45: label, hue = "NEUTRAL BIAS", "#ffcc00"
-        else: label, hue = "FEAR CORRECTION", "#ff3355"
         
         st.markdown(
             f"""
-            <div class="premium-card" style="text-align: center;">
-                <p style="font-family: 'Space Mono', monospace; font-size: 10px; color:#4a7090; margin:0;">BREADTH MOMENTUM INDEX</p>
-                <h1 style="color: {hue}; font-size: 48px; margin: 10px 0;">{sentiment_score}</h1>
-                <div style="font-family: 'Space Mono', monospace; font-size: 12px; color: {hue}; letter-spacing: 2px;">{label}</div>
-                <div style="width: 100%; background: rgba(255,255,255,0.05); height: 6px; border-radius: 3px; margin-top:15px; overflow:hidden;">
-                    <div style="width: {sentiment_score}%; background: linear-gradient(90deg, #ff3355, {hue}); height:100%;"></div>
+            <div class="accent-card" style="text-align: center;">
+                <p style="font-family: 'Space Mono', monospace; font-size: 10px; color:#64748b; margin:0;">STOCKS OVER 20 SMA</p>
+                <h1 style="color: #38bdf8; font-size: 42px; margin: 8px 0;">{sentiment_score}%</h1>
+                <div style="width: 100%; background: rgba(255,255,255,0.05); height: 6px; border-radius: 3px; overflow:hidden;">
+                    <div style="width: {sentiment_score}%; background: #00d4aa; height:100%;"></div>
                 </div>
             </div>
             """,
