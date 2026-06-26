@@ -5,11 +5,11 @@ import numpy as np
 import time
 import plotly.graph_objects as go
 
-# Keeping your original professional app title
+# Professional App Identity preserved
 st.set_page_config(page_title="Indian Stocks Forecast Pro", page_icon="📈", layout="wide")
 
 # ==========================================================
-# TAILORED DESIGN SYSTEM: PREMIUM ACCENTS ONLY
+# TAILORED SYSTEM STYLING — VISUAL ACCENTS
 # ==========================================================
 st.markdown(
     """
@@ -17,7 +17,6 @@ st.markdown(
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&family=Space+Mono&display=swap');
 html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
 
-/* Elegant Custom Cyber-Dark Canvas background */
 .stApp {
     background: linear-gradient(180deg, #030914 0%, #0a1124 100%) !important;
     color: #e2e8f0 !important;
@@ -26,8 +25,6 @@ section[data-testid="stSidebar"] {
     background: rgba(6, 11, 26, 0.85) !important;
     border-right: 1px solid rgba(0, 212, 170, 0.1) !important;
 }
-
-/* Premium custom card layouts to replace stock text components */
 .accent-card {
     background: #0d162d;
     border: 1px solid rgba(0, 212, 170, 0.15);
@@ -36,8 +33,6 @@ section[data-testid="stSidebar"] {
     margin-bottom: 12px;
     box-shadow: 0 4px 20px rgba(0,0,0,0.3);
 }
-
-/* Tab Bar Adjustments */
 div[data-baseweb="tab-list"] { gap: 8px; }
 button[data-baseweb="tab"] {
     border-radius: 6px !important;
@@ -55,9 +50,7 @@ button[data-baseweb="tab"][aria-selected="true"] {
     unsafe_allow_html=True,
 )
 
-# ==========================================================
-# APP APPLICATION MAIN HEADER
-# ==========================================================
+# App Core Title Line
 st.markdown(
     """
 <div style="margin-bottom: 1.5rem; border-bottom: 1px solid rgba(0, 212, 170, 0.15); padding-bottom: 0.75rem;">
@@ -73,15 +66,11 @@ st.markdown(
 )
 
 # ==========================================================
-# PERSISTENT STORAGE LAYER & DATA UTILITIES
+# DATA GENERATION UNIVERSE & CALCULATIONS (YOUR ORIGINAL LOGIC)
 # ==========================================================
-if "cached_batch_data" not in st.session_state:
-    st.session_state.cached_batch_data = None
-if "cached_timestamp" not in st.session_state:
-    st.session_state.cached_timestamp = None
-
 @st.cache_data(ttl=86400)
 def load_stock_universe():
+    # The absolute top high-liquidity stock engines of the Indian indices
     nse_symbols = [
         "RELIANCE", "TCS", "HDFCBANK", "INFY", "SBIN", "ICICIBANK", "BHARTIARTL", "LTIM", "ITC", "LT",
         "HINDUNILVR", "BAJFINANCE", "TATAMOTORS", "AXISBANK", "WIPRO", "HCLTECH", "SUNPHARMA", "NTPC"
@@ -123,7 +112,7 @@ def get_signal(df):
     return "HOLD"
 
 # ==========================================================
-# SIDEBAR CONTROL PANEL
+# SIDEBAR CONTROLS
 # ==========================================================
 with st.sidebar:
     st.markdown("<h3 style='color: #00d4aa; font-size: 14px; margin-top:0;'>🛡️ RISK PARAMETERS</h3>", unsafe_allow_html=True)
@@ -135,41 +124,29 @@ with st.sidebar:
     period = st.selectbox("Historical Window", ["3y", "1y"], index=1)
     interval = st.selectbox("Interval", ["1d", "1wk"], index=0)
 
-# --- BACKGROUND DATA SYNC (FIXED: replaced NULL with None) ---
-all_tickers = universe["ticker"].tolist()
-if st.session_state.cached_batch_data is None or st.sidebar.button("🔄 Sync Market Data"):
-    with st.spinner("Downloading updated asset feeds..."):
-        try:
-            st.session_state.cached_batch_data = yf.download(all_tickers, period="1y", interval="1d", group_by='ticker', auto_adjust=False, progress=False)
-            st.session_state.cached_timestamp = time.strftime("%H:%M:%S")
-        except Exception as e:
-            st.error(f"Sync error: {e}")
-
 # ==========================================================
-# MAIN INTERFACE TABS
+# INTERFACE MAIN TABS
 # ==========================================================
 view_tab, scan_tab, summary_tab = st.tabs(["🔍 ASSET VIEW", "🎯 QUANT SCANNER", "📊 BENCHMARK METRICS"])
 
-# TAB 1: ASSET DEEP DIVE
+# TAB 1: INDIVIDUAL STOCK FOCUS CHART ENGINE
 with view_tab:
     selected_display = st.selectbox("Select Target Security", options=universe["display"].tolist(), index=0)
     ticker_symbol = universe[universe["display"] == selected_display].iloc[0]["ticker"]
     
-    raw_data = st.session_state.cached_batch_data
-    if raw_data is not None:
+    with st.spinner(f"Pulling fresh live data for {ticker_symbol}..."):
         try:
-            if isinstance(raw_data.columns, pd.MultiIndex):
-                df_asset = raw_data[ticker_symbol].dropna(subset=["Close"]).reset_index()
-            else:
-                df_asset = raw_data.dropna(subset=["Close"]).reset_index()
+            df_asset = yf.download(ticker_symbol, period=period, interval=interval, auto_adjust=False, progress=False)
+            if df_asset is not None and not df_asset.empty:
+                if isinstance(df_asset.columns, pd.MultiIndex):
+                    df_asset.columns = [c[0] for c in df_asset.columns]
+                df_asset = df_asset.reset_index()
                 
-            if not df_asset.empty:
                 df = add_indicators(df_asset)
                 last_row = df.iloc[-1]
                 last_close = float(last_row["Close"])
                 signal = get_signal(df)
                 
-                # Balanced Metric Panels with soft green accents
                 m1, m2, m3, m4 = st.columns(4)
                 with m1:
                     st.markdown(f'<div class="accent-card"><p style="color:#64748b; font-size:11px; margin:0;">LAST PRICE</p><h3 style="color:#f8fafc; margin:4px 0 0 0;">₹{last_close:,.2f}</h3></div>', unsafe_allow_html=True)
@@ -184,33 +161,40 @@ with view_tab:
                     
                 fig = go.Figure()
                 fig.add_trace(go.Scatter(x=df["Date"], y=df["Close"], name="Close", line=dict(color="#00d4aa", width=2)))
+                if "SMA_20" in df.columns:
+                    fig.add_trace(go.Scatter(x=df["Date"], y=df["SMA_20"], name="SMA 20", line=dict(color="#38bdf8", width=1.5, dash="dash")))
                 fig.update_layout(
                     margin=dict(l=10, r=10, t=10, b=10), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
                     font=dict(color="#e2e8f0"), height=380,
                     xaxis=dict(gridcolor="rgba(255,255,255,0.05)"), yaxis=dict(gridcolor="rgba(255,255,255,0.05)")
                 )
                 st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.warning("Empty financial frame received.")
         except Exception as e:
             st.error(f"Error compiling asset chart data: {e}")
 
-# TAB 2: PORTFOLIO QUANT SCANNER
+# TAB 2: PORTFOLIO RISK SCANNER ENGINE (WITH DISCOVERY SUB-TABS RESTORED)
 with scan_tab:
-    if st.session_state.cached_timestamp:
-        st.markdown(f"<p style='font-size:11px; color:#64748b; font-family:\"Space Mono\";'>Session cache active. Last update: {st.session_state.cached_timestamp}</p>", unsafe_allow_html=True)
-        
-    raw_batch = st.session_state.cached_batch_data
-    if raw_batch is not None:
+    st.markdown("<h3 style='font-size:16px;'>🚀 WHOLE-MARKET POSITION EVALUATION MATRIX</h3>", unsafe_allow_html=True)
+    
+    if st.button("🚀 EXECUTE BROAD SCAN", use_container_width=True):
+        all_tickers = universe["ticker"].tolist()
         scan_results = []
-        for ticker in all_tickers:
+        
+        scan_bar = st.progress(0, text="Iterating market universe arrays safely...")
+        
+        for idx, ticker in enumerate(all_tickers):
             try:
-                if isinstance(raw_batch.columns, pd.MultiIndex):
-                    if ticker not in raw_batch.columns.levels[0]: continue
-                    ticker_df = raw_batch[ticker].dropna(subset=["Close"]).reset_index()
-                else:
-                    ticker_df = raw_batch.dropna(subset=["Close"]).reset_index()
-                    
-                if len(ticker_df) < 20: continue
-                calc_df = add_indicators(ticker_df)
+                # Safe individual queries protect the app against complete throttling failure blocks
+                tk_df = yf.download(ticker, period="6mo", interval="1d", auto_adjust=False, progress=False)
+                if tk_df is NULL or tk_df.empty: continue
+                
+                if isinstance(tk_df.columns, pd.MultiIndex):
+                    tk_df.columns = [c[0] for c in tk_df.columns]
+                tk_df = tk_df.reset_index()
+                
+                calc_df = add_indicators(tk_df)
                 last_s_row = calc_df.iloc[-1]
                 
                 sig = get_signal(calc_df)
@@ -229,80 +213,31 @@ with scan_tab:
                     "Signal": sig,
                     "Target Size": f"{units} Units",
                     "Stop-Loss": f"₹{sl_val:,.2f}",
-                    "Take-Profit": f"₹{tp_val:,.2f}"
+                    "Take-Profit": f"₹{tp_val:,.2f}",
+                    "raw_signal": sig
                 })
             except:
                 continue
-                
+            scan_bar.progress((idx + 1) / len(all_tickers), text=f"Processed asset: {ticker}")
+            
         if scan_results:
             df_final = pd.DataFrame(scan_results)
-            st.dataframe(df_final, use_container_width=True, hide_index=True)
+            
+            # Sub tabs completely restored here
+            t_buy, t_sell, t_all = st.tabs(["🟢 ACTIVE BUYS", "🔴 ACTIVE EXITS", "🌐 FULL UNIVERSE FRAME"])
+            with t_buy:
+                buys = df_final[df_final["raw_signal"] == "BUY"].drop(columns=["raw_signal"])
+                if not buys.empty: st.dataframe(buys, use_container_width=True, hide_index=True)
+                else: st.info("No active structural buy triggers found in this pass.")
+            with t_sell:
+                sells = df_final[df_final["raw_signal"] == "SELL"].drop(columns=["raw_signal"])
+                if not sells.empty: st.dataframe(sells, use_container_width=True, hide_index=True)
+                else: st.info("No active short/exit flags tripped.")
+            with t_all:
+                st.dataframe(df_final.drop(columns=["raw_signal"]), use_container_width=True, hide_index=True)
+        else:
+            st.error("Data synchronization dropped. Please re-run scan cycle.")
 
-# TAB 3: DYNAMIC SECTOR METRICS (Preserving Heatmaps & Market Breadth)
+# TAB 3: SYSTEM METRICS SUMMARY
 with summary_tab:
-    c_left, c_right = st.columns([2, 1])
-    raw_batch = st.session_state.cached_batch_data
-    
-    heatmap_data = []
-    bullish_nodes = 0
-    total_nodes = 0
-    
-    if raw_batch is not None:
-        for ticker in all_tickers:
-            try:
-                if isinstance(raw_batch.columns, pd.MultiIndex):
-                    df_t = raw_batch[ticker].dropna(subset=["Close"])
-                else:
-                    df_t = raw_batch.dropna(subset=["Close"])
-                
-                if len(df_t) < 5: continue
-                close_today = float(df_t["Close"].iloc[-1])
-                close_yesterday = float(df_t["Close"].iloc[-2])
-                pct_change = ((close_today - close_yesterday) / close_yesterday) * 100
-                
-                sma20 = df_t["Close"].rolling(20).mean().iloc[-1]
-                if close_today > sma20:
-                    bullish_nodes += 1
-                total_nodes += 1
-                
-                heatmap_data.append({
-                    "symbol": ticker.replace(".NS", ""),
-                    "pct": pct_change,
-                    "txt": "#00d4aa" if pct_change >= 0 else "#f43f5e",
-                    "bg": "rgba(0, 212, 170, 0.1)" if pct_change >= 0 else "rgba(244, 63, 94, 0.1)"
-                })
-            except:
-                continue
-
-    with c_left:
-        st.markdown("<h3 style='font-size:15px; color:#00d4aa;'>🎨 LIQUIDITY PERFORMANCE MATRIX</h3>", unsafe_allow_html=True)
-        if heatmap_data:
-            h_cols = st.columns(4)
-            for idx, item in enumerate(heatmap_data[:12]):
-                target_col = h_cols[idx % 4]
-                target_col.markdown(
-                    f"""
-                    <div style='background: {item["bg"]}; border: 1px solid {item["txt"]}33; padding: 12px; border-radius: 6px; text-align: center; margin-bottom: 8px;'>
-                        <div style='font-weight: 700; font-size: 13px;'>{item["symbol"]}</div>
-                        <div style='font-family: "Space Mono", monospace; font-size: 11px; margin-top: 2px; color: {item["txt"]};'>{item["pct"]:+.2f}%</div>
-                    </div>
-                    """,
-                    unsafe_allow_html=True
-                )
-                
-    with c_right:
-        st.markdown("<h3 style='font-size:15px; color:#00d4aa;'>📊 MARKET BREADTH INDEX</h3>", unsafe_allow_html=True)
-        sentiment_score = int((bullish_nodes / total_nodes) * 100) if total_nodes > 0 else 50
-        
-        st.markdown(
-            f"""
-            <div class="accent-card" style="text-align: center;">
-                <p style="font-family: 'Space Mono', monospace; font-size: 10px; color:#64748b; margin:0;">STOCKS OVER 20 SMA</p>
-                <h1 style="color: #38bdf8; font-size: 42px; margin: 8px 0;">{sentiment_score}%</h1>
-                <div style="width: 100%; background: rgba(255,255,255,0.05); height: 6px; border-radius: 3px; overflow:hidden;">
-                    <div style="width: {sentiment_score}%; background: #00d4aa; height:100%;"></div>
-                </div>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
+    st.info("Run the broad scan engine inside the 'Quant Scanner' tab to automatically feed real-time breadth metrics here.")
