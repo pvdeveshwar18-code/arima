@@ -11,7 +11,7 @@ import requests
 
 st.set_page_config(page_title="Indian Stocks Forecast Pro", page_icon="📈", layout="wide")
 
-# Theme & CSS Injecting
+# Premium Cyberpunk-Dark Style Sheet
 st.markdown(
     """
 <style>
@@ -69,11 +69,6 @@ button[data-baseweb="tab"][aria-selected="true"] {
     max-height: 250px;
     overflow-y: auto;
 }
-.suggestion-item-btn {
-    width: 100%;
-    text-align: left;
-    margin-bottom: 0.25rem;
-}
 .badge {
     display: inline-block;
     padding: 0.22rem 0.55rem;
@@ -108,7 +103,7 @@ def load_stock_universe():
     frames = []
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
     
-    # 1. Try Live NSE
+    # Try Live NSE Scraping safely with short network timeout
     try:
         res = requests.get("https://nsearchives.nseindia.com/content/equities/sec_list.csv", headers=headers, timeout=3)
         if res.status_code == 200:
@@ -125,7 +120,7 @@ def load_stock_universe():
     except Exception:
         pass
 
-    # If live fetching is blocked/fails, supply an immediate robust liquid pool
+    # Safe Local Contingency Mapping if remote assets freeze
     if not frames:
         fallback_data = {
             "company": ["Reliance Industries Ltd", "Tata Consultancy Services", "HDFC Bank Ltd", "Infosys Ltd", "State Bank of India", "ICICI Bank Ltd", "ITC Ltd", "Larsen & Toubro Ltd", "Bharti Airtel Ltd", "Hindustan Unilever Ltd"],
@@ -133,8 +128,7 @@ def load_stock_universe():
             "ticker": ["RELIANCE.NS", "TCS.NS", "HDFCBANK.NS", "INFY.NS", "SBIN.NS", "ICICIBANK.NS", "ITC.NS", "LT.NS", "BHARTIARTL.NS", "HINDUNILVR.NS"],
             "exchange": ["NSE"] * 10
         }
-        fallback_df = pd.DataFrame(fallback_data)
-        frames.append(fallback_df)
+        frames.append(pd.DataFrame(fallback_data))
 
     uni = pd.concat(frames, ignore_index=True).drop_duplicates(subset=["ticker"])
     uni["display"] = uni["company"].fillna(uni["symbol"]).astype(str) + " | " + uni["exchange"].astype(str) + " | " + uni["ticker"].astype(str)
@@ -142,7 +136,7 @@ def load_stock_universe():
 
 universe = load_stock_universe()
 
-# Session State Initializations
+# State Management Pipeline
 if "main_ticker" not in st.session_state:
     st.session_state.main_ticker = "TCS.NS"
 if "selected_company" not in st.session_state:
@@ -181,6 +175,7 @@ with st.sidebar:
     )
 
     matches = suggestion_matches(search_text)
+    
     if search_text.strip() != "" and not matches.empty:
         st.markdown('<div class="suggestion-box">', unsafe_allow_html=True)
         for _, row in matches.iterrows():
@@ -188,6 +183,15 @@ with st.sidebar:
                 set_selected(row["display"])
                 st.rerun()
         st.markdown("</div>", unsafe_allow_html=True)
+    elif search_text.strip() != "":
+        st.caption("✨ Custom Ticker detected. Press 'Run Analysis' to process it directly!")
+
+    # Live Override Logic for Custom Entries (like eternal.ns)
+    cleaned_input = search_text.strip().upper()
+    if cleaned_input.endswith(".NS") or cleaned_input.endswith(".BO"):
+        st.session_state.main_ticker = cleaned_input
+        st.session_state.selected_company = cleaned_input.split(".")[0]
+        st.session_state.selected_exchange = cleaned_input.split(".")[1]
 
     st.markdown(
         f"Selected: **{st.session_state.selected_company}** "
@@ -205,7 +209,15 @@ with st.sidebar:
     compare_all = st.checkbox("Compare selected tickers", value=True)
     
     if st.button("Run Analysis", use_container_width=True):
+        raw_text = search_text.strip().upper()
+        # Handle cases where extension is omitted (e.g. typing just 'ETERNAL')
+        if raw_text and not (raw_text.endswith(".NS") or raw_text.endswith(".BO")) and matches.empty:
+            st.session_state.main_ticker = f"{raw_text}.NS"
+            st.session_state.selected_company = raw_text
+            st.session_state.selected_exchange = "NSE"
+            
         st.session_state.trigger_analysis = True
+        st.rerun()
 
 @st.cache_data(ttl=3600)
 def download_stock(ticker, period, interval):
@@ -224,7 +236,7 @@ def download_stock(ticker, period, interval):
                     df[col] = pd.to_numeric(df[col], errors="coerce")
             return df
     except Exception as e:
-        st.error(f"Error fetching {ticker}: {str(e)}")
+        pass
     return pd.DataFrame()
 
 def add_indicators(df):
@@ -298,7 +310,7 @@ def backtest_crossover(df):
 def forecast_arima(series, steps):
     clean = series.dropna()
     if len(clean) < 30: return None, None
-    for order in [(1, 1, 1), (2, 1, 0), (0, 1, 1)]:
+    for order in [(1, 1, 1), (2, 1, 0)]:
         try:
             model = ARIMA(clean, order=order).fit()
             fc = model.get_forecast(steps=steps)
@@ -381,24 +393,13 @@ def amd_state(df):
     trend = df["Close"].iloc[-1] - df["Close"].iloc[-15]
     return "Distribution" if trend > 0 else "Accumulation"
 
-def support_resistance(df):
-    d = df.copy()
-    pivots = []
-    for i in range(2, len(d) - 2):
-        h, l = d["High"].iloc[i], d["Low"].iloc[i]
-        if h == d["High"].iloc[i-2:i+3].max():
-            pivots.append(("Resistance", float(h), d["Date"].iloc[i]))
-        if l == d["Low"].iloc[i-2:i+3].min():
-            pivots.append(("Support", float(l), d["Date"].iloc[i]))
-    return pd.DataFrame(pivots, columns=["Type", "Level", "Date"])
-
-# Persistent Logic Implementation
+# Main Core Framework Execution
 if st.session_state.trigger_analysis:
     main_ticker = st.session_state.main_ticker
     base = download_stock(main_ticker, period, interval)
     
     if base.empty:
-        st.error(f"No valid price history fetched for {main_ticker}. Try another asset.")
+        st.error(f"⚠️ No historical price records could be loaded for target identifier: '{main_ticker}'. Verify the symbol formatting on Yahoo Finance.")
     else:
         base = add_indicators(base)
         last_close = float(base["Close"].iloc[-1])
@@ -409,12 +410,10 @@ if st.session_state.trigger_analysis:
         sentiment = sentiment_label(base)
         backtested, strat_ret, bh_ret, trades, win_days, loss_days = backtest_crossover(base)
         
-        # Predictive Modeling Block
         steps = forecast_days if interval == "1d" else max(4, forecast_days // 5)
         arima_pred, arima_ci = forecast_arima(base["Close"], steps)
         ets_pred = forecast_ets(base["Close"], steps)
         
-        # Accuracy Metrics
         split_idx = int(len(base) * backtest_split / 100)
         mae, rmse, mape = 0, 0, 0
         if split_idx > 15:
@@ -424,7 +423,7 @@ if st.session_state.trigger_analysis:
                 mae, rmse, mape = forecast_metrics(base["Close"].iloc[split_idx:].values, eval_fc.predicted_mean.values)
             except: pass
 
-        # Metrics display
+        # Structural Metrics Board
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("Last Close", f"₹{last_close:,.2f}")
         c2.metric("Period Return", f"{ytd_return:+.2f}%")
@@ -468,16 +467,15 @@ if st.session_state.trigger_analysis:
             st.subheader("Crossover Backtest Results")
             st.write(f"Strategy Cumulative Performance: **{strat_ret:.2%}** vs Buy & Hold: **{bh_ret:.2%}**")
             fig_bt = go.Figure()
-            fig_bt.add_trace(go.Scatter(x=backtested["Date"], y=backtested["Equity"], name="Strategy Strategy", line=dict(color="#00d4aa")))
+            fig_bt.add_trace(go.Scatter(x=backtested["Date"], y=backtested["Equity"], name="Strategy Returns", line=dict(color="#00d4aa")))
             fig_bt.add_trace(go.Scatter(x=backtested["Date"], y=backtested["BuyHold"], name="Bench Buy & Hold", line=dict(color="#38bdf8", dash="dash")))
             fig_bt.update_layout(template="plotly_dark", height=450)
             st.plotly_chart(fig_bt, use_container_width=True)
 
         with t4:
             st.subheader("Universe Snapshot")
-            st.write("Click 'Compare selected tickers' to monitor performance trends across key benchmark entries.")
-            if compare_all:
-                st.dataframe(universe.head(5), use_container_width=True)
+            st.write("Cross-comparison tracking index pool:")
+            st.dataframe(universe.head(10), use_container_width=True)
 
         with t5:
             st.subheader("Order Flow & Liquidity Distribution")
@@ -492,7 +490,7 @@ if st.session_state.trigger_analysis:
             m3.metric("Sampled Profile Blocks", len(vp_df))
 
             fig_ms = go.Figure()
-            fig_ms.add_trace(go.Scatter(x=base["Date"], y=base["Close"], name="Underlying close", line=dict(color="#60a5fa")))
+            fig_ms.add_trace(go.Scatter(x=base["Date"], y=base["Close"], name="Underlying Close", line=dict(color="#60a5fa")))
             if not avwap_series.empty:
                 fig_ms.add_trace(go.Scatter(x=avwap_series.index, y=avwap_series.values, name="Anchored VWAP", line=dict(color="#a78bfa", width=2)))
             fig_ms.update_layout(template="plotly_dark", height=450)
