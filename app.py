@@ -426,28 +426,52 @@ if st.session_state.trigger_analysis:
 
         with c1:
             with st.container(border=True):
-                st.markdown("<p style='margin:0; font-size:0.85rem; color:#94a3b8; font-weight:600; text-transform:uppercase;'>Last Close</p>", unsafe_allow_html=True)
+                st.markdown(
+                    """
+                    <p style="margin:0; font-size:0.85rem; color:#94a3b8; font-weight:600; text-transform:uppercase;">Last Close</p>
+                    """, 
+                    unsafe_allow_html=True
+                )
                 st.markdown(f"<h2 style='margin:4px 0; font-weight:800; color:#fff;'>₹{last_close:,.2f}</h2>", unsafe_allow_html=True)
-                st.markdown("<span style='font-size:0.75rem; color:#00d4aa; font-weight:700;'>● Live Feed</span>", unsafe_allow_html=True)
+                st.markdown(
+                    """
+                    <span style="font-size:0.75rem; color:#00d4aa; font-weight:700;">● Live Feed</span>
+                    """, 
+                    unsafe_allow_html=True
+                )
 
         with c2:
             with st.container(border=True):
                 ret_color = "#00d4aa" if ytd_return >= 0 else "#ef4444"
                 ret_arrow = "▲" if ytd_return >= 0 else "▼"
-                st.markdown("<p style='margin:0; font-size:0.85rem; color:#94a3b8; font-weight:600; text-transform:uppercase;'>Period Return</p>", unsafe_allow_html=True)
+                st.markdown(
+                    """
+                    <p style="margin:0; font-size:0.85rem; color:#94a3b8; font-weight:600; text-transform:uppercase;">Period Return</p>
+                    """, 
+                    unsafe_allow_html=True
+                )
                 st.markdown(f"<h2 style='margin:4px 0; font-weight:800; color:{ret_color};'>{ytd_return:+.2f}%</h2>", unsafe_allow_html=True)
                 st.markdown(f"<span style='font-size:0.75rem; color:{ret_color}; font-weight:700;'>{ret_arrow} Performance</span>", unsafe_allow_html=True)
 
         with c3:
             with st.container(border=True):
                 vol_color = "#ef4444" if annual_vol > 0.30 else "#38bdf8"
-                st.markdown("<p style='margin:0; font-size:0.85rem; color:#94a3b8; font-weight:600; text-transform:uppercase;'>Annual Volatility</p>", unsafe_allow_html=True)
+                st.markdown(
+                    """
+                    <p style="margin:0; font-size:0.85rem; color:#94a3b8; font-weight:600; text-transform:uppercase;">Annual Volatility</p>
+                    """, 
+                    unsafe_allow_html=True
+                )
                 st.markdown(f"<h2 style='margin:4px 0; font-weight:800; color:{vol_color};'>{annual_vol:.2%}</h2>", unsafe_allow_html=True)
                 st.markdown(f"<span style='font-size:0.75rem; color:{vol_color}; font-weight:700;'>Risk Vector</span>", unsafe_allow_html=True)
 
         with c4:
             with st.container(border=True):
                 bias_color = "#00d4aa" if signal == "Buy" else ("#ef4444" if signal == "Exit" else "#94a3b8")
-                st.markdown("<p style='margin:0; font-size:0.85rem; color:#94a3b8; font-weight:600; text-transform:uppercase;'>Tactical Bias</p>", unsafe_allow_html=True)
-                st.markdown(f"<h2 style='margin:4px 0; font-weight:800; color:{bias_color};'>{signal}</h2>", unsafe_allow_html=True)
-                st.markdown(f"<span style='font-size:0.75rem; color:{bias_color}; font-weight:700;'>Quant Signal</span>", unsafe_allow_html=True
+                st.markdown(
+                    """
+                    <p style="margin:0; font-size:0.85rem; color:#94a3b8; font-weight:600; text-transform:uppercase;">Tactical Bias</p>
+                    """, 
+                    unsafe_allow_html=True
+                )
+                st
