@@ -6,8 +6,6 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from statsmodels.tsa.arima.model import ARIMA
 from statsmodels.tsa.holtwinters import ExponentialSmoothing
-from sklearn.metrics import mean_absolute_error, mean_squared_error
-from math import sqrt
 import requests
 
 st.set_page_config(page_title="Indian Stocks Forecast Pro", page_icon="📈", layout="wide")
@@ -87,9 +85,10 @@ button[data-baseweb="tab"][aria-selected="true"] {
     unsafe_allow_html=True,
 )
 
+# Header Section
 st.markdown(
     """
-<div style="margin-bottom: 1.5rem;">
+<div style="margin-bottom: 1.0rem;">
     <h1 style="margin:0; font-size:2.3rem; font-weight:800; background: linear-gradient(90deg,#00d4aa,#38bdf8,#a78bfa); -webkit-background-clip:text; -webkit-text-fill-color:transparent;">
         Indian Stocks Forecast Pro
     </h1>
@@ -145,7 +144,7 @@ if "selected_company" not in st.session_state:
 if "selected_exchange" not in st.session_state:
     st.session_state.selected_exchange = "NSE"
 if "trigger_analysis" not in st.session_state:
-    st.session_state.trigger_analysis = False
+    st.session_state.trigger_analysis = True
 
 def set_selected(display):
     row = universe[universe["display"] == display].head(1)
@@ -167,34 +166,51 @@ def suggestion_matches(query):
     )
     return universe.loc[mask].head(8)
 
+# --- TOP SEARCH BAR IMPLEMENTATION (TradingView Style) ---
+st.markdown("### 🔍 Search Symbol")
+search_col1, search_col2 = st.columns([0.8, 0.2])
+
+with search_col1:
+    search_text = st.text_input("Type company name or exchange symbol", value="", placeholder="🔍 Symbol, company, ISIN, or CUSIP... (e.g. TCS, RELIANCE, SWIGGY)", label_visibility="collapsed")
+
+with search_col2:
+    run_pressed = st.button("Run Analysis", use_container_width=True)
+
+matches = suggestion_matches(search_text)
+if search_text.strip() != "" and not matches.empty:
+    st.markdown('<div class="suggestion-box">', unsafe_allow_html=True)
+    for _, row in matches.iterrows():
+        if st.button(row["display"], key=f"sel_{row['ticker']}", use_container_width=True):
+            set_selected(row["display"])
+            st.rerun()
+    st.markdown("</div>", unsafe_allow_html=True)
+
+cleaned_input = search_text.strip().upper()
+if cleaned_input.endswith(".NS") or cleaned_input.endswith(".BO"):
+    st.session_state.main_ticker = cleaned_input
+    st.session_state.selected_company = cleaned_input.split(".")[0]
+    st.session_state.selected_exchange = cleaned_input.split(".")[1]
+
+if run_pressed:
+    raw_text = search_text.strip().upper()
+    if raw_text and not (raw_text.endswith(".NS") or raw_text.endswith(".BO")):
+        st.session_state.main_ticker = f"{raw_text}.NS"
+        st.session_state.selected_company = raw_text
+        st.session_state.selected_exchange = "NSE"
+    st.session_state.trigger_analysis = True
+    st.rerun()
+
+# Metadata badge row underneath the top search bar
+st.markdown(
+    f"<div style='margin-bottom: 1.5rem;'>Active Asset Focus: <strong>{st.session_state.selected_company}</strong> "
+    f"<span class='badge'>{st.session_state.selected_exchange}</span> "
+    f"<span class='badge'>{st.session_state.main_ticker}</span></div>",
+    unsafe_allow_html=True,
+)
+
+# --- SIDEBAR (Now only holding configurations) ---
 with st.sidebar:
-    st.header("Search Stock")
-    search_text = st.text_input("Type company name or symbol", value="", placeholder="e.g. Swiggy, Reliance, TCS")
-
-    matches = suggestion_matches(search_text)
-    if search_text.strip() != "" and not matches.empty:
-        st.markdown('<div class="suggestion-box">', unsafe_allow_html=True)
-        for _, row in matches.iterrows():
-            if st.button(row["display"], key=f"sel_{row['ticker']}", use_container_width=True):
-                set_selected(row["display"])
-                st.rerun()
-        st.markdown("</div>", unsafe_allow_html=True)
-    elif search_text.strip() != "":
-        st.caption("✨ Custom Ticker detected. Press 'Run Analysis' to process across Indian markets.")
-
-    cleaned_input = search_text.strip().upper()
-    if cleaned_input.endswith(".NS") or cleaned_input.endswith(".BO"):
-        st.session_state.main_ticker = cleaned_input
-        st.session_state.selected_company = cleaned_input.split(".")[0]
-        st.session_state.selected_exchange = cleaned_input.split(".")[1]
-
-    st.markdown(
-        f"Selected: **{st.session_state.selected_company}** "
-        f"<span class='badge'>{st.session_state.selected_exchange}</span> "
-        f"<span class='badge'>{st.session_state.main_ticker}</span>",
-        unsafe_allow_html=True,
-    )
-
+    st.header("Parameters")
     period = st.selectbox("History", ["5y", "3y", "2y", "1y"], index=0)
     interval = st.selectbox("Interval", ["1d", "1wk"], index=0)
     forecast_days = st.slider("Forecast horizon (trading days)", 5, 252, 60)
@@ -207,16 +223,6 @@ with st.sidebar:
     
     backtest_split = st.slider("Backtest split (%)", 60, 90, 80)
     show_raw = st.checkbox("Show raw data", value=False)
-    
-    if st.button("Run Analysis", use_container_width=True):
-        raw_text = search_text.strip().upper()
-        if raw_text and not (raw_text.endswith(".NS") or raw_text.endswith(".BO")):
-            st.session_state.main_ticker = f"{raw_text}.NS"
-            st.session_state.selected_company = raw_text
-            st.session_state.selected_exchange = "NSE"
-            
-        st.session_state.trigger_analysis = True
-        st.rerun()
 
 @st.cache_data(ttl=3600)
 def download_stock(ticker, period, interval):
@@ -329,7 +335,7 @@ if st.session_state.trigger_analysis:
     f_metrics = fetch_fundamentals(main_ticker)
     
     if base.empty:
-        st.error(f"No valid price history fetched for {main_ticker}. Verify symbol parameter accuracy.")
+        st.error(f"No valid price history fetched for {main_ticker}. Try another asset.")
     else:
         base = add_indicators(base)
         last_close = float(base["Close"].iloc[-1])
@@ -418,67 +424,4 @@ if st.session_state.trigger_analysis:
             st.plotly_chart(fig_fc, use_container_width=True, config={'displayModeBar': False})
 
         with t3:
-            st.markdown("<h4 style='color:#38bdf8; font-weight:700;'>Strategy Optimization & Execution Targets</h4>", unsafe_allow_html=True)
-            
-            # Risk Sizing & Price Bracket Mechanics
-            current_atr = base["ATR_14"].iloc[-1] if pd.notna(base["ATR_14"].iloc[-1]) else (last_close * 0.02)
-            allowed_rupees_at_risk = allocated_capital * (risk_per_trade / 100.0)
-            
-            # Risk Brackets Based on Execution Signals
-            stop_loss_distance = current_atr * 1.5
-            recommended_shares = int(allowed_rupees_at_risk // stop_loss_distance) if stop_loss_distance > 0 else 0
-            
-            # Bracket Levels
-            stop_loss_price = last_close - stop_loss_distance
-            target_profit_price = last_close + (stop_loss_distance * risk_reward_ratio)
-            
-            rc1, rc2, rc3 = st.columns(3)
-            with rc1:
-                st.metric("Strategy Historical Return", f"{strat_ret:.2%}", delta=f"vs Bench {bh_ret:.2%}")
-            with rc2:
-                st.metric("Maximum Backtest Drawdown", f"{max_dd:.2%}", delta="Peak-to-Trough Pain", delta_color="inverse")
-            with rc3:
-                st.metric("Position Allocation", f"{recommended_shares} Units", f"Risk Budget: ₹{allowed_rupees_at_risk:,.2f}")
-                
-            # Upgraded Actionable Risk Bracket Callouts
-            st.markdown("---")
-            st.markdown("🎯 **Active Execution Directives**")
-            tc1, tc2, tc3 = st.columns(3)
-            with tc1:
-                with st.container(border=True):
-                    st.write("🧱 **Entry Threshold anchor**")
-                    st.subheader(f"₹{last_close:,.2f}")
-            with tc2:
-                with st.container(border=True):
-                    st.write("🛑 **Technical Stop-Loss (1.5x ATR)**")
-                    st.subheader(f"₹{stop_loss_price:,.2f}")
-            with tc3:
-                with st.container(border=True):
-                    st.write(f"🎁 **Take-Profit Target (1:{risk_reward_ratio})**")
-                    st.subheader(f"₹{target_profit_price:,.2f}")
-                    
-            st.caption(f"ℹ️ Sizing parameters map directly against your custom sidebar dashboard inputs.")
-            
-            fig_bt = go.Figure()
-            fig_bt.add_trace(go.Scatter(x=backtested["Date"], y=backtested["Equity"], name="Strategy Momentum Equity Curve", line=dict(color="#00d4aa", width=2)))
-            fig_bt.add_trace(go.Scatter(x=backtested["Date"], y=backtested["BuyHold"], name="Benchmark Buy & Hold Track", line=dict(color="#38bdf8", dash="dash")))
-            fig_bt.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font=dict(color="#e5e7eb", family="Inter"), margin=dict(l=10, r=10, t=10, b=10))
-            fig_bt.update_yaxes(gridcolor="rgba(255,255,255,0.05)", side="right")
-            st.plotly_chart(fig_bt, use_container_width=True, config={'displayModeBar': False})
-
-        with t4:
-            st.markdown("<h4 style='color:#38bdf8; font-weight:700;'>Corporate Fundamental Snapshot</h4>", unsafe_allow_html=True)
-            fc1, fc2, fc3 = st.columns(3)
-            with fc1:
-                st.metric("Trailing P/E Ratio", f"{f_metrics['pe']:.2f}" if pd.notna(f_metrics['pe']) else "N/A")
-            with fc2:
-                st.metric("Price-to-Book (P/B)", f"{f_metrics['pb']:.2f}" if pd.notna(f_metrics['pb']) else "N/A")
-            with fc3:
-                st.metric("Historical Asset Beta", f"{f_metrics['beta']:.2f}" if pd.notna(f_metrics['beta']) else "N/A")
-                
-            st.markdown(f"**Corporate Background Summary Profile:**\n\n>{f_metrics['summary']}")
-            if show_raw:
-                st.markdown("---")
-                st.dataframe(base.tail(30), use_container_width=True)
-else:
-    st.info("👈 Set system variables inside the panel matrix settings on the left sidebar and select 'Run Analysis'.")
+            st.markdown("<h4
