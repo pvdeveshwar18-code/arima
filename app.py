@@ -106,27 +106,31 @@ def load_stock_universe():
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
     
     try:
-        res = requests.get("https://nsearchives.nseindia.com/content/equities/sec_list.csv", headers=headers, timeout=3)
+        # High-availability mirror repository for complete Nifty list
+        res = requests.get("https://raw.githubusercontent.com/anirbanghoshsbi/NSE-LIST/master/NSE_EQUITIES_LIST.csv", headers=headers, timeout=5)
         if res.status_code == 200:
             from io import StringIO
             nse = pd.read_csv(StringIO(res.text))
-            nse.columns = [c.strip() for c in nse.columns]
-            if "SYMBOL" in nse.columns:
-                tmp = pd.DataFrame()
-                tmp["company"] = nse["NAME OF COMPANY"].astype(str).str.strip() if "NAME OF COMPANY" in nse.columns else nse["SYMBOL"].astype(str).str.strip()
-                tmp["symbol"] = nse["SYMBOL"].astype(str).str.strip()
-                tmp["ticker"] = tmp["symbol"] + ".NS"
-                tmp["exchange"] = "NSE"
-                frames.append(tmp)
+            nse.columns = [c.strip().upper() for c in nse.columns]
+            sym_col = "SYMBOL" if "SYMBOL" in nse.columns else nse.columns[0]
+            name_col = "NAME OF COMPANY" if "NAME OF COMPANY" in nse.columns else sym_col
+            
+            tmp = pd.DataFrame()
+            tmp["company"] = nse[name_col].astype(str).str.strip()
+            tmp["symbol"] = nse[sym_col].astype(str).str.strip()
+            tmp["ticker"] = tmp["symbol"] + ".NS"
+            tmp["exchange"] = "NSE"
+            frames.append(tmp)
     except Exception:
         pass
 
     if not frames:
+        # Extended high-fidelity fallback list of top NSE market drivers
         fallback_data = {
-            "company": ["Reliance Industries Ltd", "Tata Consultancy Services", "HDFC Bank Ltd", "Infosys Ltd", "State Bank of India", "ICICI Bank Ltd", "ITC Ltd", "Larsen & Tourbro Ltd", "Bharti Airtel Ltd", "Hindustan Unilever Ltd"],
-            "symbol": ["RELIANCE", "TCS", "HDFCBANK", "INFY", "SBIN", "ICICIBANK", "ITC", "LT", "BHARTIARTL", "HINDUNILVR"],
-            "ticker": ["RELIANCE.NS", "TCS.NS", "HDFCBANK.NS", "INFY.NS", "SBIN.NS", "ICICIBANK.NS", "ITC.NS", "LT.NS", "BHARTIARTL.NS", "HINDUNILVR.NS"],
-            "exchange": ["NSE"] * 10
+            "company": ["Reliance Industries Ltd", "Tata Consultancy Services", "HDFC Bank Ltd", "Infosys Ltd", "State Bank of India", "ICICI Bank Ltd", "ITC Ltd", "Larsen & Toubro Ltd", "Bharti Airtel Ltd", "Hindustan Unilever Ltd", "Tata Motors Ltd", "Zomato Ltd", "Adani Enterprises", "Bajaj Finance", "Mahindra & Mahindra"],
+            "symbol": ["RELIANCE", "TCS", "HDFCBANK", "INFY", "SBIN", "ICICIBANK", "ITC", "LT", "BHARTIARTL", "HINDUNILVR", "TATAMOTORS", "ZOMATO", "ADANIENT", "BAJFINANCE", "M&M"],
+            "ticker": ["RELIANCE.NS", "TCS.NS", "HDFCBANK.NS", "INFY.NS", "SBIN.NS", "ICICIBANK.NS", "ITC.NS", "LT.NS", "BHARTIARTL.NS", "HINDUNILVR.NS", "TATAMOTORS.NS", "ZOMATO.NS", "ADANIENT.NS", "BAJFINANCE.NS", "M&M.NS"],
+            "exchange": ["NSE"] * 15
         }
         frames.append(pd.DataFrame(fallback_data))
 
@@ -170,7 +174,7 @@ with st.sidebar:
     search_text = st.text_input(
         "Type company name or symbol",
         value="",
-        placeholder="e.g. Reliance, TCS, INFY",
+        placeholder="e.g. Reliance, TCS, SBIN",
     )
 
     matches = suggestion_matches(search_text)
@@ -183,7 +187,7 @@ with st.sidebar:
                 st.rerun()
         st.markdown("</div>", unsafe_allow_html=True)
     elif search_text.strip() != "":
-        st.caption("✨ Custom Ticker detected. Press 'Run Analysis' to process it directly!")
+        st.caption("✨ Custom Ticker detected. Press 'Run Analysis' to look it up directly across all Indian exchanges.")
 
     cleaned_input = search_text.strip().upper()
     if cleaned_input.endswith(".NS") or cleaned_input.endswith(".BO"):
@@ -208,7 +212,7 @@ with st.sidebar:
     
     if st.button("Run Analysis", use_container_width=True):
         raw_text = search_text.strip().upper()
-        if raw_text and not (raw_text.endswith(".NS") or raw_text.endswith(".BO")) and matches.empty:
+        if raw_text and not (raw_text.endswith(".NS") or raw_text.endswith(".BO")):
             st.session_state.main_ticker = f"{raw_text}.NS"
             st.session_state.selected_company = raw_text
             st.session_state.selected_exchange = "NSE"
@@ -232,7 +236,7 @@ def download_stock(ticker, period, interval):
                 if col in df.columns:
                     df[col] = pd.to_numeric(df[col], errors="coerce")
             return df
-    except Exception as e:
+    except Exception:
         pass
     return pd.DataFrame()
 
@@ -373,18 +377,6 @@ def liquidity_sweep(df, lookback=20):
         return "Bearish Sweep", float(prev_high)
     return "None", None
 
-def fvg_zones(df):
-    d = df.copy()
-    zones = []
-    if len(d) < 3: return zones
-    for i in range(2, len(d)):
-        c1, c3 = d.iloc[i - 2], d.iloc[i]
-        if c3["Low"] > c1["High"]:
-            zones.append(("Bullish FVG", float(c1["High"]), float(c3["Low"]), d.iloc[i]["Date"]))
-        elif c3["High"] < c1["Low"]:
-            zones.append(("Bearish FVG", float(c3["High"]), float(c1["Low"]), d.iloc[i]["Date"]))
-    return zones
-
 def amd_state(df):
     if len(df) < 20: return "Unknown"
     trend = df["Close"].iloc[-1] - df["Close"].iloc[-15]
@@ -397,7 +389,7 @@ if st.session_state.trigger_analysis:
     base = download_stock(main_ticker, period, interval)
     
     if base.empty:
-        st.error(f"No valid price history fetched for {main_ticker}. Try another asset.")
+        st.error(f"No valid price history fetched for {main_ticker}. Verify that the symbol is correct and listed on Yahoo Finance.")
     else:
         base = add_indicators(base)
         last_close = float(base["Close"].iloc[-1])
@@ -421,57 +413,128 @@ if st.session_state.trigger_analysis:
                 mae, rmse, mape = forecast_metrics(base["Close"].iloc[split_idx:].values, eval_fc.predicted_mean.values)
             except: pass
 
-        # 1. BORDERED KPI GRID BOARD
+        # Native Streamlit KPI Grid Board - Eliminates layout crash bugs
         c1, c2, c3, c4 = st.columns(4)
-
         with c1:
             with st.container(border=True):
-                st.markdown(
-                    """
-                    <p style="margin:0; font-size:0.85rem; color:#94a3b8; font-weight:600; text-transform:uppercase;">Last Close</p>
-                    """, 
-                    unsafe_allow_html=True
-                )
-                st.markdown(f"<h2 style='margin:4px 0; font-weight:800; color:#fff;'>₹{last_close:,.2f}</h2>", unsafe_allow_html=True)
-                st.markdown(
-                    """
-                    <span style="font-size:0.75rem; color:#00d4aa; font-weight:700;">● Live Feed</span>
-                    """, 
-                    unsafe_allow_html=True
-                )
-
+                st.metric(label="Last Close", value=f"₹{last_close:,.2f}", delta="Live Feed")
         with c2:
             with st.container(border=True):
-                ret_color = "#00d4aa" if ytd_return >= 0 else "#ef4444"
-                ret_arrow = "▲" if ytd_return >= 0 else "▼"
-                st.markdown(
-                    """
-                    <p style="margin:0; font-size:0.85rem; color:#94a3b8; font-weight:600; text-transform:uppercase;">Period Return</p>
-                    """, 
-                    unsafe_allow_html=True
-                )
-                st.markdown(f"<h2 style='margin:4px 0; font-weight:800; color:{ret_color};'>{ytd_return:+.2f}%</h2>", unsafe_allow_html=True)
-                st.markdown(f"<span style='font-size:0.75rem; color:{ret_color}; font-weight:700;'>{ret_arrow} Performance</span>", unsafe_allow_html=True)
-
+                st.metric(label="Period Return", value=f"{ytd_return:+.2f}%", delta="Performance")
         with c3:
             with st.container(border=True):
-                vol_color = "#ef4444" if annual_vol > 0.30 else "#38bdf8"
-                st.markdown(
-                    """
-                    <p style="margin:0; font-size:0.85rem; color:#94a3b8; font-weight:600; text-transform:uppercase;">Annual Volatility</p>
-                    """, 
-                    unsafe_allow_html=True
-                )
-                st.markdown(f"<h2 style='margin:4px 0; font-weight:800; color:{vol_color};'>{annual_vol:.2%}</h2>", unsafe_allow_html=True)
-                st.markdown(f"<span style='font-size:0.75rem; color:{vol_color}; font-weight:700;'>Risk Vector</span>", unsafe_allow_html=True)
-
+                st.metric(label="Annual Volatility", value=f"{annual_vol:.2%}", delta="Risk Vector", delta_color="inverse")
         with c4:
             with st.container(border=True):
-                bias_color = "#00d4aa" if signal == "Buy" else ("#ef4444" if signal == "Exit" else "#94a3b8")
-                st.markdown(
-                    """
-                    <p style="margin:0; font-size:0.85rem; color:#94a3b8; font-weight:600; text-transform:uppercase;">Tactical Bias</p>
-                    """, 
-                    unsafe_allow_html=True
-                )
-                st
+                st.metric(label="Tactical Bias", value=signal, delta="Quant Signal")
+
+        st.markdown("<div style='margin-top: 1.5rem;'></div>", unsafe_allow_html=True)
+
+        # Navigation Tabs
+        t1, t2, t3, t4, t5 = st.tabs([
+            "📊 Core Analytics", 
+            "🤖 Predictive Intelligence", 
+            "🧪 Strategy Validation", 
+            "🌐 Market Universe", 
+            "🧬 Order Flow Architecture"
+        ])
+
+        with t1:
+            st.markdown("<h4 style='color:#38bdf8; font-weight:700; margin-bottom:1rem;'>Price Action & Moving Averages</h4>", unsafe_allow_html=True)
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(x=base["Date"], y=base["Close"], name="Close Price", line=dict(color="#00d4aa", width=2)))
+            fig.add_trace(go.Scatter(x=base["Date"], y=base["SMA_20"], name="Fast (SMA 20)", line=dict(color="#38bdf8", width=1.5, dash="dash")))
+            fig.add_trace(go.Scatter(x=base["Date"], y=base["SMA_50"], name="Slow (SMA 50)", line=dict(color="#a78bfa", width=1.5)))
+            
+            fig.update_layout(
+                paper_bgcolor="rgba(0,0,0,0)",
+                plot_bgcolor="rgba(0,0,0,0)",
+                font=dict(color="#e5e7eb", family="Inter"),
+                hovermode="x unified",
+                margin=dict(l=10, r=10, t=10, b=10),
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                xaxis=dict(gridcolor="rgba(255,255,255,0.05)", zeroline=False),
+                yaxis=dict(gridcolor="rgba(255,255,255,0.05)", zeroline=False, side="right")
+            )
+            st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
+            
+            if show_raw:
+                st.markdown("<br>", unsafe_allow_html=True)
+                st.dataframe(base.tail(30), use_container_width=True)
+
+        with t2:
+            st.markdown("<h4 style='color:#38bdf8; font-weight:700; margin-bottom:1rem;'>Statistical & Horizon Projections</h4>", unsafe_allow_html=True)
+            fc_idx = pd.bdate_range(base["Date"].iloc[-1] + pd.Timedelta(days=1), periods=steps)
+            forecast_df = pd.DataFrame(index=fc_idx)
+            
+            fig_fc = go.Figure()
+            fig_fc.add_trace(go.Scatter(x=base["Date"].tail(90), y=base["Close"].tail(90), name="Historical Anchor", line=dict(color="#64748b", width=2)))
+            
+            if arima_pred is not None:
+                forecast_df["ARIMA"] = arima_pred.values
+                fig_fc.add_trace(go.Scatter(x=fc_idx, y=forecast_df["ARIMA"], name="ARIMA ML Engine", line=dict(color="#ef4444", width=2.5)))
+            if ets_pred is not None:
+                forecast_df["ETS"] = ets_pred.values
+                fig_fc.add_trace(go.Scatter(x=fc_idx, y=forecast_df["ETS"], name="Smoothing State Matrix", line=dict(color="#00d4aa", width=2.5, dash="dot")))
+                
+            fig_fc.update_layout(
+                paper_bgcolor="rgba(0,0,0,0)",
+                plot_bgcolor="rgba(0,0,0,0)",
+                font=dict(color="#e5e7eb", family="Inter"),
+                hovermode="x unified",
+                margin=dict(l=10, r=10, t=10, b=10),
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                xaxis=dict(gridcolor="rgba(255,255,255,0.05)"),
+                yaxis=dict(gridcolor="rgba(255,255,255,0.05)", side="right")
+            )
+            st.plotly_chart(fig_fc, use_container_width=True, config={'displayModeBar': False})
+            st.info(f"📊 **Holdout Verification Metrics:** Mean Absolute Error (MAE): `{mae:.2f}` | Root RMSE: `{rmse:.2f}` | MAPE Variance: `{mape:.2f}%`")
+
+        with t3:
+            st.markdown("<h4 style='color:#38bdf8; font-weight:700; margin-bottom:1rem;'>Crossover Backtest Validation</h4>", unsafe_allow_html=True)
+            st.write(f"Strategy Cumulative Performance: **{strat_ret:.2%}** vs Bench Buy & Hold: **{bh_ret:.2%}**")
+            fig_bt = go.Figure()
+            fig_bt.add_trace(go.Scatter(x=backtested["Date"], y=backtested["Equity"], name="Strategy Returns", line=dict(color="#00d4aa", width=2)))
+            fig_bt.add_trace(go.Scatter(x=backtested["Date"], y=backtested["BuyHold"], name="Bench Buy & Hold", line=dict(color="#38bdf8", dash="dash")))
+            fig_bt.update_layout(
+                paper_bgcolor="rgba(0,0,0,0)",
+                plot_bgcolor="rgba(0,0,0,0)",
+                font=dict(color="#e5e7eb", family="Inter"),
+                margin=dict(l=10, r=10, t=10, b=10),
+                xaxis=dict(gridcolor="rgba(255,255,255,0.05)"),
+                yaxis=dict(gridcolor="rgba(255,255,255,0.05)", side="right")
+            )
+            st.plotly_chart(fig_bt, use_container_width=True, config={'displayModeBar': False})
+
+        with t4:
+            st.markdown("<h4 style='color:#38bdf8; font-weight:700; margin-bottom:1rem;'>Universe Snapshot</h4>", unsafe_allow_html=True)
+            st.write("Cross-comparison tracking index pool:")
+            st.dataframe(universe, use_container_width=True)
+
+        with t5:
+            st.markdown("<h4 style='color:#38bdf8; font-weight:700; margin-bottom:1rem;'>Order Flow & Liquidity Distribution</h4>", unsafe_allow_html=True)
+            avwap_series = anchored_vwap(base)
+            vp_df = volume_profile(base)
+            sweep_txt, _ = liquidity_sweep(base)
+            amd_lbl = amd_state(base)
+            
+            m1, m2, m3 = st.columns(3)
+            m1.metric("Structural Range State", amd_lbl)
+            m2.metric("Liquidity Dynamics", sweep_txt)
+            m3.metric("Sampled Profile Blocks", len(vp_df))
+
+            fig_ms = go.Figure()
+            fig_ms.add_trace(go.Scatter(x=base["Date"], y=base["Close"], name="Underlying Close", line=dict(color="#60a5fa")))
+            if not avwap_series.empty:
+                fig_ms.add_trace(go.Scatter(x=avwap_series.index, y=avwap_series.values, name="Anchored VWAP", line=dict(color="#a78bfa", width=2)))
+            fig_ms.update_layout(
+                paper_bgcolor="rgba(0,0,0,0)",
+                plot_bgcolor="rgba(0,0,0,0)",
+                font=dict(color="#e5e7eb", family="Inter"),
+                margin=dict(l=10, r=10, t=10, b=10),
+                xaxis=dict(gridcolor="rgba(255,255,255,0.05)"),
+                yaxis=dict(gridcolor="rgba(255,255,255,0.05)", side="right")
+            )
+            st.plotly_chart(fig_ms, use_container_width=True, config={'displayModeBar': False})
+else:
+    st.info("👈 Set parameters inside the left control panel and select 'Run Analysis' to process computational indicators.")
