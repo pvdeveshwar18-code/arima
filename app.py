@@ -185,6 +185,7 @@ with st.sidebar:
     elif search_text.strip() != "":
         st.caption("✨ Custom Ticker detected. Press 'Run Analysis' to process it directly!")
 
+    # Check for direct text entries ending with an exchange extension
     cleaned_input = search_text.strip().upper()
     if cleaned_input.endswith(".NS") or cleaned_input.endswith(".BO"):
         st.session_state.main_ticker = cleaned_input
@@ -208,6 +209,7 @@ with st.sidebar:
     
     if st.button("Run Analysis", use_container_width=True):
         raw_text = search_text.strip().upper()
+        # Handle simple word inputs without extension (e.g., ETERNAL -> ETERNAL.NS)
         if raw_text and not (raw_text.endswith(".NS") or raw_text.endswith(".BO")) and matches.empty:
             st.session_state.main_ticker = f"{raw_text}.NS"
             st.session_state.selected_company = raw_text
@@ -397,7 +399,7 @@ if st.session_state.trigger_analysis:
     base = download_stock(main_ticker, period, interval)
     
     if base.empty:
-        st.error(f"⚠️ No historical price records could be loaded for target identifier: '{main_ticker}'. Verify the symbol formatting on Yahoo Finance.")
+        st.error(f"No valid price history fetched for {main_ticker}. Try another asset.")
     else:
         base = add_indicators(base)
         last_close = float(base["Close"].iloc[-1])
@@ -421,24 +423,50 @@ if st.session_state.trigger_analysis:
                 mae, rmse, mape = forecast_metrics(base["Close"].iloc[split_idx:].values, eval_fc.predicted_mean.values)
             except: pass
 
-        # 1. ENHANCED GLASSMORPHIC KPI BOARD (Flattened logic to eliminate compilation truncations)
+        # 1. BORDERED KPI GRID BOARD
         c1, c2, c3, c4 = st.columns(4)
 
-        ret_color = "#00d4aa" if ytd_return >= 0 else "#ef4444"
-        ret_bg = "rgba(0,212,170,0.1)" if ytd_return >= 0 else "rgba(239,68,68,0.1)"
-        ret_arrow = "▲" if ytd_return >= 0 else "▼"
-
-        vol_color = "#ef4444" if annual_vol > 0.30 else "#38bdf8"
-        vol_bg = "rgba(239,68,68,0.1)" if annual_vol > 0.30 else "rgba(56,189,248,0.1)"
-
-        bias_color = "#00d4aa" if signal == "Buy" else ("#ef4444" if signal == "Exit" else "#94a3b8")
-        bias_bg = "rgba(0,212,170,0.1)" if signal == "Buy" else ("rgba(239,68,68,0.1)" if signal == "Exit" else "rgba(148,163,184,0.1)")
-
         with c1:
-            st.markdown(f'<div style="background: rgba(15, 23, 42, 0.65); border: 1px solid rgba(255,255,255,0.08); backdrop-filter: blur(12px); border-radius: 16px; padding: 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.25);"><p style="margin:0; font-size:0.85rem; color: #94a3b8; font-weight:600; text-transform: uppercase; letter-spacing: 0.05em;">Last Close</p><h2 style="margin: 8px 0 0 0; font-size:1.8rem; font-weight:800; color:#ffffff;">₹{last_close:,.2f}</h2><span style="font-size:0.75rem; color:#00d4aa; background:rgba(0,212,170,0.1); padding: 2px 8px; border-radius:999px; font-weight:700;">● Live Feed</span></div>', unsafe_allow_html=True)
+            with st.container(border=True):
+                st.markdown("<p style='margin:0; font-size:0.85rem; color:#94a3b8; font-weight:600; text-transform:uppercase;'>Last Close</p>", unsafe_allow_html=True)
+                st.markdown(f"<h2 style='margin:4px 0; font-weight:800; color:#fff;'>₹{last_close:,.2f}</h2>", unsafe_allow_html=True)
+                st.markdown("<span style='font-size:0.75rem; color:#00d4aa; font-weight:700;'>● Live Feed</span>", unsafe_allow_html=True)
 
         with c2:
-            st.markdown(f'<div style="background: rgba(15, 23, 42, 0.65); border: 1px solid rgba(255,255,255,0.08); backdrop-filter: blur(12px); border-radius: 16px; padding: 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.25);"><p style="margin:0; font-size:0.85rem; color: #94a3b8; font-weight:600; text-transform: uppercase; letter-spacing: 0.05em;">Period Return</p><h2 style="margin: 8px 0 0 0; font-size:1.8rem; font-weight:800; color:{ret_color};">{ytd_return:+.2f}%</h2><span style="font-size:0.75rem; color:{ret_color}; background:{ret_bg}; padding: 2px 8px; border-radius:999px; font-weight:700;">{ret_arrow} Performance</span></div>', unsafe_allow_html=True)
+            with st.container(border=True):
+                ret_color = "#00d4aa" if ytd_return >= 0 else "#ef4444"
+                ret_arrow = "▲" if ytd_return >= 0 else "▼"
+                st.markdown("<p style='margin:0; font-size:0.85rem; color:#94a3b8; font-weight:600; text-transform:uppercase;'>Period Return</p>", unsafe_allow_html=True)
+                st.markdown(f"<h2 style='margin:4px 0; font-weight:800; color:{ret_color};'>{ytd_return:+.2f}%</h2>", unsafe_allow_html=True)
+                st.markdown(f"<span style='font-size:0.75rem; color:{ret_color}; font-weight:700;'>{ret_arrow} Performance</span>", unsafe_allow_html=True)
 
         with c3:
-            st.markdown(f'<div style="background: rgba(15, 23, 42, 0.65); border: 1px solid rgba(255,255,255,0.08); backdrop-filter: blur(1
+            with st.container(border=True):
+                vol_color = "#ef4444" if annual_vol > 0.30 else "#38bdf8"
+                st.markdown("<p style='margin:0; font-size:0.85rem; color:#94a3b8; font-weight:600; text-transform:uppercase;'>Annual Volatility</p>", unsafe_allow_html=True)
+                st.markdown(f"<h2 style='margin:4px 0; font-weight:800; color:{vol_color};'>{annual_vol:.2%}</h2>", unsafe_allow_html=True)
+                st.markdown(f"<span style='font-size:0.75rem; color:{vol_color}; font-weight:700;'>Risk Vector</span>", unsafe_allow_html=True)
+
+        with c4:
+            with st.container(border=True):
+                bias_color = "#00d4aa" if signal == "Buy" else ("#ef4444" if signal == "Exit" else "#94a3b8")
+                st.markdown("<p style='margin:0; font-size:0.85rem; color:#94a3b8; font-weight:600; text-transform:uppercase;'>Tactical Bias</p>", unsafe_allow_html=True)
+                st.markdown(f"<h2 style='margin:4px 0; font-weight:800; color:{bias_color};'>{signal}</h2>", unsafe_allow_html=True)
+                st.markdown(f"<span style='font-size:0.75rem; color:{bias_color}; font-weight:700;'>Quant Signal</span>", unsafe_allow_html=True)
+
+        st.markdown("<div style='margin-top: 2rem;'></div>", unsafe_allow_html=True)
+
+        # 2. SEAMLESS NAVIGATION TABS
+        t1, t2, t3, t4, t5 = st.tabs([
+            "📊 Core Analytics", 
+            "🤖 Predictive Intelligence", 
+            "🧪 Strategy Validation", 
+            "🌐 Market Universe", 
+            "🧬 Order Flow Architecture"
+        ])
+
+        with t1:
+            st.markdown("<h4 style='color:#38bdf8; font-weight:700; margin-bottom:1rem;'>Price Action & Moving Averages</h4>", unsafe_allow_html=True)
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(x=base["Date"], y=base["Close"], name="Close Price", line=dict(color="#00d4aa", width=2)))
+            fig.add_trace(go.Scatter(x=base["Date"], y=base["SMA_20"], name="Fast (SMA 20)", line=dict(
