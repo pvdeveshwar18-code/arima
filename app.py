@@ -15,7 +15,7 @@ st.set_page_config(page_title="Indian Stocks Forecast Pro", page_icon="📈", la
 st.markdown(
     """
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght=400;600;700;800&display=swap');
 html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
 .stApp {
     background:
@@ -123,7 +123,7 @@ def load_stock_universe():
 
     if not frames:
         fallback_data = {
-            "company": ["Reliance Industries Ltd", "Tata Consultancy Services", "HDFC Bank Ltd", "Infosys Ltd", "State Bank of India", "ICICI Bank Ltd", "ITC Ltd", "Larsen & Toubro Ltd", "Bharti Airtel Ltd", "Hindustan Unilever Ltd"],
+            "company": ["Reliance Industries Ltd", "Tata Consultancy Services", "HDFC Bank Ltd", "Infosys Ltd", "State Bank of India", "ICICI Bank Ltd", "ITC Ltd", "Larsen & Tourbro Ltd", "Bharti Airtel Ltd", "Hindustan Unilever Ltd"],
             "symbol": ["RELIANCE", "TCS", "HDFCBANK", "INFY", "SBIN", "ICICIBANK", "ITC", "LT", "BHARTIARTL", "HINDUNILVR"],
             "ticker": ["RELIANCE.NS", "TCS.NS", "HDFCBANK.NS", "INFY.NS", "SBIN.NS", "ICICIBANK.NS", "ITC.NS", "LT.NS", "BHARTIARTL.NS", "HINDUNILVR.NS"],
             "exchange": ["NSE"] * 10
@@ -421,35 +421,24 @@ if st.session_state.trigger_analysis:
                 mae, rmse, mape = forecast_metrics(base["Close"].iloc[split_idx:].values, eval_fc.predicted_mean.values)
             except: pass
 
-        # 1. ENHANCED GLASSMORPHIC KPI BOARD
+        # 1. ENHANCED GLASSMORPHIC KPI BOARD (Flattened logic to eliminate compilation truncations)
         c1, c2, c3, c4 = st.columns(4)
 
+        ret_color = "#00d4aa" if ytd_return >= 0 else "#ef4444"
+        ret_bg = "rgba(0,212,170,0.1)" if ytd_return >= 0 else "rgba(239,68,68,0.1)"
+        ret_arrow = "▲" if ytd_return >= 0 else "▼"
+
+        vol_color = "#ef4444" if annual_vol > 0.30 else "#38bdf8"
+        vol_bg = "rgba(239,68,68,0.1)" if annual_vol > 0.30 else "rgba(56,189,248,0.1)"
+
+        bias_color = "#00d4aa" if signal == "Buy" else ("#ef4444" if signal == "Exit" else "#94a3b8")
+        bias_bg = "rgba(0,212,170,0.1)" if signal == "Buy" else ("rgba(239,68,68,0.1)" if signal == "Exit" else "rgba(148,163,184,0.1)")
+
         with c1:
-            st.markdown(
-                f"""
-                <div style="background: rgba(15, 23, 42, 0.65); border: 1px solid rgba(255,255,255,0.08); backdrop-filter: blur(12px); border-radius: 16px; padding: 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.25);">
-                    <p style="margin:0; font-size:0.85rem; color: #94a3b8; font-weight:600; text-transform: uppercase; letter-spacing: 0.05em;">Last Close</p>
-                    <h2 style="margin: 8px 0 0 0; font-size:1.8rem; font-weight:800; color:#ffffff;">₹{last_close:,.2f}</h2>
-                    <span style="font-size:0.75rem; color:#00d4aa; background:rgba(0,212,170,0.1); padding: 2px 8px; border-radius:999px; font-weight:700;">● Live Feed</span>
-                </div>
-                """, 
-                unsafe_allow_html=True
-            )
+            st.markdown(f'<div style="background: rgba(15, 23, 42, 0.65); border: 1px solid rgba(255,255,255,0.08); backdrop-filter: blur(12px); border-radius: 16px; padding: 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.25);"><p style="margin:0; font-size:0.85rem; color: #94a3b8; font-weight:600; text-transform: uppercase; letter-spacing: 0.05em;">Last Close</p><h2 style="margin: 8px 0 0 0; font-size:1.8rem; font-weight:800; color:#ffffff;">₹{last_close:,.2f}</h2><span style="font-size:0.75rem; color:#00d4aa; background:rgba(0,212,170,0.1); padding: 2px 8px; border-radius:999px; font-weight:700;">● Live Feed</span></div>', unsafe_allow_html=True)
 
         with c2:
-            ret_color = "#00d4aa" if ytd_return >= 0 else "#ef4444"
-            ret_bg = "rgba(0,212,170,0.1)" if ytd_return >= 0 else "rgba(239,68,68,0.1)"
-            st.markdown(
-                f"""
-                <div style="background: rgba(15, 23, 42, 0.65); border: 1px solid rgba(255,255,255,0.08); backdrop-filter: blur(12px); border-radius: 16px; padding: 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.25);">
-                    <p style="margin:0; font-size:0.85rem; color: #94a3b8; font-weight:600; text-transform: uppercase; letter-spacing: 0.05em;">Period Return</p>
-                    <h2 style="margin: 8px 0 0 0; font-size:1.8rem; font-weight:800; color:{ret_color};">{ytd_return:+.2f}%</h2>
-                    <span style="font-size:0.75rem; color:{ret_color}; background:{ret_bg}; padding: 2px 8px; border-radius:999px; font-weight:700;">{'▲' if ytd_return >= 0 else '▼'} Performance</span>
-                </div>
-                """, 
-                unsafe_allow_html=True
-            )
+            st.markdown(f'<div style="background: rgba(15, 23, 42, 0.65); border: 1px solid rgba(255,255,255,0.08); backdrop-filter: blur(12px); border-radius: 16px; padding: 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.25);"><p style="margin:0; font-size:0.85rem; color: #94a3b8; font-weight:600; text-transform: uppercase; letter-spacing: 0.05em;">Period Return</p><h2 style="margin: 8px 0 0 0; font-size:1.8rem; font-weight:800; color:{ret_color};">{ytd_return:+.2f}%</h2><span style="font-size:0.75rem; color:{ret_color}; background:{ret_bg}; padding: 2px 8px; border-radius:999px; font-weight:700;">{ret_arrow} Performance</span></div>', unsafe_allow_html=True)
 
         with c3:
-            vol_color = "#ef4444" if annual_vol > 0.30 else "#38bdf8"
-            vol_bg = "rgba(239,68,68,0.1)" if annual_vol > 0.30 else "rgba(56,189,248,0
+            st.markdown(f'<div style="background: rgba(15, 23, 42, 0.65); border: 1px solid rgba(255,255,255,0.08); backdrop-filter: blur(1
