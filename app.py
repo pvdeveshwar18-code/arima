@@ -112,7 +112,6 @@ st.markdown(
 @st.cache_data(ttl=24 * 60 * 60)
 def load_stock_universe():
     frames = []
-
     try:
         nse = pd.read_csv("https://nsearchives.nseindia.com/content/equities/sec_list.csv")
         nse.columns = [c.strip() for c in nse.columns]
@@ -141,44 +140,36 @@ def load_stock_universe():
         pass
 
     if not frames:
-        return pd.DataFrame(columns=["company", "symbol", "ticker", "exchange"])
+        return pd.DataFrame(columns=["company", "symbol", "ticker", "exchange", "display"])
 
     uni = pd.concat(frames, ignore_index=True).drop_duplicates(subset=["ticker"])
-    uni = uni.sort_values(["company", "exchange"]).reset_index(drop=True)
-    return uni
-
-@st.cache_data(ttl=24 * 60 * 60)
-def load_ticker_map():
-    uni = load_stock_universe().copy()
-    if uni.empty:
-        return uni
     uni["display"] = uni["company"].fillna(uni["symbol"]).astype(str) + " | " + uni["exchange"].astype(str) + " | " + uni["ticker"].astype(str)
-    return uni
+    return uni.sort_values(["company", "exchange"]).reset_index(drop=True)
 
-universe = load_ticker_map()
+universe = load_stock_universe()
 
 if "search_text" not in st.session_state:
     st.session_state.search_text = ""
-if "selected_display" not in st.session_state:
-    st.session_state.selected_display = ""
 if "main_ticker" not in st.session_state:
     st.session_state.main_ticker = "TCS.NS"
 if "selected_company" not in st.session_state:
     st.session_state.selected_company = "TCS"
 if "selected_exchange" not in st.session_state:
     st.session_state.selected_exchange = "NSE"
+if "selected_display" not in st.session_state:
+    st.session_state.selected_display = ""
 
 def set_selected(display):
-    st.session_state.selected_display = display
-    match = universe[universe["display"] == display].head(1)
-    if not match.empty:
-        st.session_state.main_ticker = match["ticker"].iloc[0]
-        st.session_state.selected_company = match["company"].iloc[0]
-        st.session_state.selected_exchange = match["exchange"].iloc[0]
+    row = universe[universe["display"] == display].head(1)
+    if not row.empty:
+        st.session_state.main_ticker = row["ticker"].iloc[0]
+        st.session_state.selected_company = row["company"].iloc[0]
+        st.session_state.selected_exchange = row["exchange"].iloc[0]
+        st.session_state.selected_display = display
 
 def suggestion_matches(query):
     if universe.empty:
-        return pd.DataFrame()
+        return pd.DataFrame(columns=universe.columns)
     q = (query or "").lower().strip()
     if not q:
         return universe.head(12)
@@ -199,25 +190,23 @@ with st.sidebar:
     )
 
     matches = suggestion_matches(st.session_state.search_text)
-
     if not matches.empty:
         st.markdown('<div class="suggestion-box">', unsafe_allow_html=True)
         for _, row in matches.iterrows():
-            label = f"{row['company']} | {row['exchange']} | {row['ticker']}"
-            if st.button(label, key=f"sel_{row['ticker']}"):
+            if st.button(row["display"], key=f"sel_{row['ticker']}"):
                 set_selected(row["display"])
                 st.rerun()
         st.markdown("</div>", unsafe_allow_html=True)
     else:
         st.caption("Type to see suggestions.")
 
-    if st.session_state.selected_display:
-        st.markdown(
-            f"Selected: **{st.session_state.selected_company}** <span class='badge'>{st.session_state.selected_exchange}</span> <span class='badge'>{st.session_state.main_ticker}</span>",
-            unsafe_allow_html=True,
-        )
-    else:
-        st.markdown("Selected: **TCS** <span class='badge'>NSE</span> <span class='badge'>TCS.NS</span>", unsafe_allow_html=True)
+    st.markdown(
+        f"Selected: **{st.session_state.selected_company}** "
+        f"<span class='badge'>{st.session_state.selected_exchange}</span> "
+        f"<span class='badge'>{st.session_state.main_ticker}</span>",
+        unsafe_allow_html=True,
+    )
+    st.caption(f"Analyzing: {st.session_state.main_ticker}")
 
     period = st.selectbox("History", ["5y", "3y", "2y", "1y"], index=0)
     interval = st.selectbox("Interval", ["1d", "1wk"], index=0)
@@ -228,29 +217,36 @@ with st.sidebar:
     compare_all = st.checkbox("Compare selected tickers", value=True)
     run_btn = st.button("Run analysis")
 
+@st.cache_data(ttl=12 * 60 * 60)
 def download_stock(ticker, period, interval):
-    try:
-        df = yf.download(ticker, period=period, interval=interval, auto_adjust=False, progress=False, threads=False)
-    except Exception:
-        return pd.DataFrame()
-    if df is None or df.empty:
-        return pd.DataFrame()
-    if isinstance(df.columns, pd.MultiIndex):
-        df.columns = [c[0] if isinstance(c, tuple) else c for c in df.columns]
-    df = df.reset_index()
-    if "Date" not in df.columns and "Datetime" in df.columns:
-        df = df.rename(columns={"Datetime": "Date"})
-    if "Date" not in df.columns:
-        return pd.DataFrame()
-    df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
-    df = df.dropna(subset=["Date"])
-    for col in ["Open", "High", "Low", "Close", "Adj Close", "Volume"]:
-        if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors="coerce")
-    if "Close" not in df.columns:
-        return pd.DataFrame()
-    df = df.dropna(subset=["Close"])
-    return df
+    candidates = [ticker]
+    if ticker.endswith(".NS"):
+        candidates.append(ticker[:-3] + ".BO")
+    elif ticker.endswith(".BO"):
+        candidates.append(ticker[:-3] + ".NS")
+
+    for tk in candidates:
+        try:
+            df = yf.download(tk, period=period, interval=interval, auto_adjust=False, progress=False, threads=False)
+        except Exception:
+            df = pd.DataFrame()
+        if df is not None and not df.empty:
+            if isinstance(df.columns, pd.MultiIndex):
+                df.columns = [c[0] if isinstance(c, tuple) else c for c in df.columns]
+            df = df.reset_index()
+            if "Date" not in df.columns and "Datetime" in df.columns:
+                df = df.rename(columns={"Datetime": "Date"})
+            if "Date" not in df.columns or "Close" not in df.columns:
+                continue
+            df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+            df = df.dropna(subset=["Date", "Close"])
+            for col in ["Open", "High", "Low", "Close", "Adj Close", "Volume"]:
+                if col in df.columns:
+                    df[col] = pd.to_numeric(df[col], errors="coerce")
+            if "Volume" not in df.columns:
+                df["Volume"] = np.nan
+            return df
+    return pd.DataFrame()
 
 def add_indicators(df):
     out = df.copy()
@@ -492,7 +488,7 @@ if run_btn:
     main_ticker = st.session_state.main_ticker
     base = download_stock(main_ticker, period, interval)
     if base.empty:
-        st.error(f"No valid price data returned for {main_ticker}.")
+        st.error(f"No valid price data returned for {main_ticker}. Try a different NSE/BSE listing.")
         st.stop()
 
     base = add_indicators(base)
@@ -629,7 +625,6 @@ if run_btn:
         s2.metric("Sentiment", sentiment)
         s3.metric("Trades", trades)
         s4.metric("Context", score_label)
-
         st.write(f"Buy/Hold/Exit logic is based on SMA20 vs SMA50 and RSI. Current view: **{signal}**.")
         st.write(f"Backtest return: **{strat_ret:.2%}** | Buy & Hold: **{bh_ret:.2%}** | Winning days: **{win_days}** | Losing days: **{loss_days}**")
         st.write(f"Accuracy: MAE **{mae:.2f}** | RMSE **{rmse:.2f}** | MAPE **{mape:.2f}%**")
@@ -643,22 +638,24 @@ if run_btn:
     with t4:
         st.subheader("Compare selected stocks")
         rows = []
-        for t in [st.session_state.main_ticker]:
+        stocks_to_compare = [st.session_state.main_ticker] if not compare_all else [st.session_state.main_ticker]
+        for t in stocks_to_compare:
             d = download_stock(t, period, interval)
             if d.empty:
                 continue
             d = add_indicators(d)
-            rows.append({
-                "Ticker": t,
-                "Last Close": float(d["Close"].iloc[-1]),
-                "YTD Return %": float((d["Close"].iloc[-1] / d["Close"].iloc[0] - 1) * 100),
-                "Volatility %": float(d["Return"].rolling(20).std().iloc[-1] * np.sqrt(252) * 100) if pd.notna(d["Return"].rolling(20).std().iloc[-1]) else np.nan,
-                "Signal": signal_label(d),
-                "Sentiment": sentiment_label(d),
-            })
+            rows.append(
+                {
+                    "Ticker": t,
+                    "Last Close": float(d["Close"].iloc[-1]),
+                    "YTD Return %": float((d["Close"].iloc[-1] / d["Close"].iloc[0] - 1) * 100),
+                    "Volatility %": float(d["Return"].rolling(20).std().iloc[-1] * np.sqrt(252) * 100) if pd.notna(d["Return"].rolling(20).std().iloc[-1]) else np.nan,
+                    "Signal": signal_label(d),
+                    "Sentiment": sentiment_label(d),
+                }
+            )
         comp = pd.DataFrame(rows)
         st.dataframe(comp, use_container_width=True)
-
         if not comp.empty:
             fig = go.Figure()
             fig.add_trace(go.Bar(x=comp["Ticker"], y=comp["YTD Return %"], name="YTD Return %"))
