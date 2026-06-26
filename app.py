@@ -9,6 +9,8 @@ from plotly.subplots import make_subplots
 import warnings
 from statsmodels.tsa.arima.model import ARIMA
 from statsmodels.tsa.stattools import adfuller
+import concurrent.futures
+from statsmodels.tsa.holtwinters import ExponentialSmoothing
 
 warnings.filterwarnings("ignore")
 
@@ -96,7 +98,7 @@ SECTORS = {
         ("Adani Green","ADANIGREEN"),("Adani Enterprises","ADANIENT"),("JSW Energy","JSWENERGY"),
         ("Torrent Power","TORNTPOWER"),("NHPC","NHPC"),("SJVN","SJVN"),("CESC","CESC"),
         ("Inox Wind","INOXWIND"),("Suzlon Energy","SUZLON"),("Orient Green Power","ORIENTGREEN"),
-        ("IREDA","IREDA"),("PFC","PFC"),("REC","RECLTD"),("IGL","IGL"),("MGL","MGL"),
+        ("IREDA","IREDA"),("PFC","PFC"),("REC","RECLTD"),("IGL","IGL"),
         ("Gujarat Gas","GUJGASLTD"),("Adani Total Gas","ATGL"),("Mahanagar Gas","MGL"),
         ("Reliance Power","RPOWER"),("Jaiprakash Power","JPPOWER"),("GIPCL","GIPCL"),
         ("CPCL","CPCL"),("Mangalore Refinery","MRPL"),("Chennai Petroleum","CHENNPETRO"),
@@ -104,7 +106,7 @@ SECTORS = {
     "🚗 Auto & Auto Ancillaries": [
         ("Maruti Suzuki","MARUTI"),("Tata Motors","TATAMOTORS"),("M&M","M&M"),
         ("Bajaj Auto","BAJAJ-AUTO"),("Hero MotoCorp","HEROMOTOCO"),("Eicher Motors","EICHERMOT"),
-        ("TVS Motor","TVSMOTOR"),("Royal Enfield (Eicher)","EICHERMOT"),("Ashok Leyland","ASHOKLEY"),
+        ("TVS Motor","TVSMOTOR"),("Ashok Leyland","ASHOKLEY"),
         ("Force Motors","FORCEMOT"),("SML Isuzu","SMLISUZU"),
         ("Apollo Tyres","APOLLOTYRE"),("MRF","MRF"),("CEAT","CEATLTD"),
         ("Balkrishna Industries","BALKRISIND"),("Bosch India","BOSCHLTD"),("Motherson Sumi","MOTHERSON"),
@@ -136,7 +138,7 @@ SECTORS = {
         ("SAIL","SAIL"),("Coal India","COALINDIA"),("NMDC","NMDC"),("Jindal Steel","JINDALSTEL"),
         ("APL Apollo Tubes","APLAPOLLO"),("Ratnamani Metals","RATNAMANI"),
         ("Maharashtra Seamless","MAHSEAMLES"),("Welspun Corp","WELCORP"),("Shyam Metalics","SHYAMMETL"),
-        ("Godawari Power","GPIL"),("MOIL","MOIL"),("GMDC","GMDC"),("Manganese Ore","MOIL"),
+        ("Godawari Power","GPIL"),("GMDC","GMDC"),("Manganese Ore","MOIL"),
         ("Hindustan Copper","HINDCOPPER"),("Tinplate Company","TINPLATE"),("Emami Paper","EMAMIPAP"),
         ("Kellton Tech","KELLTONTEC"),
     ],
@@ -321,6 +323,7 @@ def get_signal(df):
         return "SELL"
     return "HOLD"
 
+@st.cache_data(show_spinner=False)
 def arima_forecast(series, steps=260):
     """Fit ARIMA on log-price, forecast steps ahead, return price forecasts + CI."""
     log_s = np.log(series.astype(float).dropna())
@@ -341,6 +344,19 @@ def arima_forecast(series, steps=260):
     mu  = fc.predicted_mean
     ci  = fc.conf_int(alpha=0.10)
     return np.exp(mu), np.exp(ci.iloc[:,0]), np.exp(ci.iloc[:,1]), best_order, round(best_aic,1)
+
+@st.cache_data(show_spinner=False)
+def es_forecast(series, steps=260):
+    """Fit Holt-Winters Exponential Smoothing on log-price or price, forecast steps ahead."""
+    try:
+        s = series.astype(float).dropna()
+        model = ExponentialSmoothing(s, trend="add", seasonal=None).fit()
+        fc = model.forecast(steps=steps)
+        return fc
+    except Exception:
+        s = series.astype(float).dropna()
+        drift = (s.iloc[-1] - s.iloc[0]) / len(s)
+        return pd.Series([s.iloc[-1] + drift * i for i in range(1, steps + 1)])
 
 def ist_now():
     return datetime.datetime.now(IST)
@@ -395,9 +411,15 @@ with st.sidebar:
         st.warning("No match — showing full list.")
         stock_pool = ALL_STOCKS
 
-    selected_label = st.selectbox("Select Stock", list(stock_pool.keys()))
-    selected_ticker = stock_pool[selected_label]
-    selected_name   = selected_label.split(" (")[0]
+    custom_ticker_toggle = st.checkbox("Use Custom Ticker", value=False)
+    if custom_ticker_toggle:
+        custom_ticker_input = st.text_input("Enter Ticker (e.g. AAPL, BTC-USD, RELIANCE.NS)", value="RELIANCE.NS")
+        selected_ticker = custom_ticker_input.strip()
+        selected_name = selected_ticker.split(".")[0]
+    else:
+        selected_label = st.selectbox("Select Stock", list(stock_pool.keys()))
+        selected_ticker = stock_pool[selected_label]
+        selected_name   = selected_label.split(" (")[0]
 
     st.markdown("---")
     st.markdown("<p class='telemetry-tag' style='color:#00c8ff;font-weight:700;margin-bottom:5px;'>[ 🛡️ RISK CONTROLS ]</p>", unsafe_allow_html=True)
@@ -438,6 +460,57 @@ chg1d     = (close - float(prev["Close"])) / float(prev["Close"]) * 100
 hi52      = float(df["Close"].iloc[-252:].max()) if len(df) >= 252 else float(df["Close"].max())
 lo52      = float(df["Close"].iloc[-252:].min()) if len(df) >= 252 else float(df["Close"].min())
 rsi_val   = float(last["RSI_14"]) if pd.notna(last.get("RSI_14")) else 50.0
+
+# ══════════════════════════════════════════════════════════════
+# RUN SMA CROSSOVER BACKTEST (SHARED)
+# ══════════════════════════════════════════════════════════════
+bt_df = df.dropna(subset=["SMA_20","SMA_50","Close","Open"]).copy().reset_index(drop=True)
+bt_df["Signal_BT"] = 0
+bt_df.loc[bt_df["SMA_20"] > bt_df["SMA_50"], "Signal_BT"] = 1
+bt_df["Position"] = bt_df["Signal_BT"].diff()
+
+trades = []
+buy_signals_x = []
+buy_signals_y = []
+sell_signals_x = []
+sell_signals_y = []
+
+in_trade = False
+entry_price = 0.0
+entry_date  = None
+
+n_rows = len(bt_df)
+for idx in range(n_rows):
+    row = bt_df.iloc[idx]
+    pos_change = row["Position"]
+    
+    # Buy signal -> enter on Open of next trading day
+    if pos_change == 1 and not in_trade:
+        if idx + 1 < n_rows:
+            next_row = bt_df.iloc[idx + 1]
+            in_trade    = True
+            entry_price = float(next_row["Open"])
+            entry_date  = next_row["Date"]
+            buy_signals_x.append(next_row["Date"])
+            buy_signals_y.append(next_row["Open"])
+            
+    # Sell signal -> exit on Open of next trading day
+    elif pos_change == -1 and in_trade:
+        if idx + 1 < n_rows:
+            next_row = bt_df.iloc[idx + 1]
+            in_trade = False
+            exit_p   = float(next_row["Open"])
+            pnl_pct  = (exit_p - entry_price) / entry_price * 100
+            trades.append({
+                "Entry Date": str(entry_date)[:10], 
+                "Exit Date": str(next_row["Date"])[:10],
+                "Entry ₹": round(entry_price,2), 
+                "Exit ₹": round(exit_p,2),
+                "P&L %": round(pnl_pct,2), 
+                "Result": "✅ WIN" if pnl_pct > 0 else "❌ LOSS"
+            })
+            sell_signals_x.append(next_row["Date"])
+            sell_signals_y.append(next_row["Open"])
 
 # ══════════════════════════════════════════════════════════════
 # KPI ROW
@@ -501,6 +574,27 @@ with tab_chart:
         fig.add_trace(go.Scatter(x=df["Date"], y=df["BB_Lower"], name="BB Lower",
             line=dict(color="rgba(124,78,255,0.5)", width=1, dash="dot"),
             fill="tonexty", fillcolor="rgba(124,78,255,0.05)"), row=1, col=1)
+
+    # ── Risk Sizing horizontal lines ──
+    fig.add_hline(y=close, line_dash="solid", line_color="rgba(221,238,255,0.6)", annotation_text="Last Close", row=1, col=1)
+    fig.add_hline(y=sl_price, line_dash="dash", line_color="rgba(255,51,85,0.7)", annotation_text="Stop Loss", row=1, col=1)
+    fig.add_hline(y=tp_price, line_dash="dash", line_color="rgba(0,232,122,0.7)", annotation_text="Target", row=1, col=1)
+
+    # ── Trade Markers ──
+    if buy_signals_x:
+        fig.add_trace(go.Scatter(
+            x=buy_signals_x, y=buy_signals_y,
+            mode="markers", name="Buy Entry (Backtest)",
+            marker=dict(symbol="triangle-up", size=10, color="#00e87a", line=dict(width=1, color="#020813")),
+            showlegend=True
+        ), row=1, col=1)
+    if sell_signals_x:
+        fig.add_trace(go.Scatter(
+            x=sell_signals_x, y=sell_signals_y,
+            mode="markers", name="Sell Exit (Backtest)",
+            marker=dict(symbol="triangle-down", size=10, color="#ff3355", line=dict(width=1, color="#020813")),
+            showlegend=True
+        ), row=1, col=1)
 
     # ── RSI ──
     fig.add_trace(go.Scatter(x=df["Date"], y=df["RSI_14"], name="RSI 14",
@@ -604,14 +698,19 @@ with tab_arima:
                 target_price = float(fc_series.iloc[-1])
                 upside       = (target_price - close) / close * 100
 
+                es_series = es_forecast(price_series, steps=steps)
+                es_series.index = fc_dates
+                target_es = float(es_series.iloc[-1])
+                es_upside = (target_es - close) / close * 100
+
                 # KPI row
                 fa1, fa2, fa3, fa4 = st.columns(4)
                 for col, lbl, val, color in zip(
                     [fa1,fa2,fa3,fa4],
-                    ["Current Price","ARIMA Target (Jun'27)","Upside / Downside","Model"],
-                    [f"₹{close:,.2f}", f"₹{target_price:,.2f}",
-                     f"{'▲' if upside>=0 else '▼'} {abs(upside):.1f}%", f"ARIMA{arima_order}"],
-                    ["#ddeeff","#fbbf24","#00e87a" if upside>=0 else "#ff3355","#00c8ff"]
+                    ["Current Price","ARIMA Target (Jun'27)","Holt-Winters Target","ARIMA Model"],
+                    [f"₹{close:,.2f}", f"₹{target_price:,.2f} ({'▲' if upside>=0 else '▼'}{abs(upside):.1f}%)",
+                     f"₹{target_es:,.2f} ({'▲' if es_upside>=0 else '▼'}{abs(es_upside):.1f}%)", f"ARIMA{arima_order}"],
+                    ["#ddeeff","#fbbf24","#00c8ff","#ff6b35"]
                 ):
                     col.markdown(f'<div class="glass-card"><p class="glass-label">{lbl}</p>'
                                  f'<div class="glass-value" style="color:{color};">{val}</div></div>',
@@ -625,11 +724,13 @@ with tab_arima:
                     line=dict(color="#7c6ef8", width=1.8)))
                 fig2.add_trace(go.Scatter(x=fc_series.index, y=fc_series.values, name="ARIMA Forecast",
                     line=dict(color="#f97316", width=2, dash="dash")))
+                fig2.add_trace(go.Scatter(x=es_series.index, y=es_series.values, name="Holt-Winters Forecast",
+                    line=dict(color="#00c8ff", width=1.5, dash="dashdot")))
                 fig2.add_trace(go.Scatter(
                     x=list(ci_hi.index) + list(ci_lo.index[::-1]),
                     y=list(ci_hi.values) + list(ci_lo.values[::-1]),
-                    fill="toself", fillcolor="rgba(249,115,22,0.12)",
-                    line=dict(color="rgba(0,0,0,0)"), name="90% CI", showlegend=True))
+                    fill="toself", fillcolor="rgba(249,115,22,0.08)",
+                    line=dict(color="rgba(0,0,0,0)"), name="ARIMA 90% CI", showlegend=True))
                 fig2.add_vline(x=str(last_date), line_dash="dot", line_color="rgba(100,100,100,0.5)")
                 fig2.add_annotation(x=str(target_end), y=target_price,
                     text=f"Jun '27<br>₹{target_price:,.0f}",
@@ -701,29 +802,7 @@ with tab_arima:
 # ──────────────────────────────────────────────────────────────
 with tab_backtest:
     st.markdown(f'<p class="section-header">[ 📈 SMA CROSSOVER BACKTEST — {selected_name} ]</p>', unsafe_allow_html=True)
-
-    bt_df = df.dropna(subset=["SMA_20","SMA_50","Close"]).copy()
-    bt_df["Position"] = 0
-    bt_df["Signal_BT"] = 0
-    bt_df.loc[bt_df["SMA_20"] > bt_df["SMA_50"], "Signal_BT"] = 1
-    bt_df["Position"] = bt_df["Signal_BT"].diff()
-
-    trades = []
-    in_trade = False
-    entry_price = 0.0
-    entry_date  = None
-    for _, row in bt_df.iterrows():
-        if row["Position"] == 1 and not in_trade:
-            in_trade    = True
-            entry_price = float(row["Close"])
-            entry_date  = row["Date"]
-        elif row["Position"] == -1 and in_trade:
-            in_trade = False
-            exit_p   = float(row["Close"])
-            pnl_pct  = (exit_p - entry_price) / entry_price * 100
-            trades.append({"Entry Date": str(entry_date)[:10], "Exit Date": str(row["Date"])[:10],
-                           "Entry ₹": round(entry_price,2), "Exit ₹": round(exit_p,2),
-                           "P&L %": round(pnl_pct,2), "Result": "✅ WIN" if pnl_pct > 0 else "❌ LOSS"})
+    st.caption("ℹ️ Execution model: Next-day Open execution (eliminates look-ahead bias).")
 
     if trades:
         trades_df  = pd.DataFrame(trades)
@@ -771,6 +850,34 @@ with tab_scan:
                                    default=["🏦 Banking & Finance","💻 IT & Technology"])
     max_stocks   = st.slider("Max stocks to scan", 10, 100, 30, step=5)
 
+    def scan_single_stock(name, ticker_s):
+        try:
+            sd = load_ohlcv(ticker_s, period="1y")
+            if sd is None or len(sd) < 60:
+                return None
+            sd = add_indicators(sd)
+            last_s = sd.iloc[-1]
+            prev_s = sd.iloc[-2]
+            sig_s  = get_signal(sd)
+            cp     = float(last_s["Close"])
+            chg_s  = (cp - float(prev_s["Close"])) / float(prev_s["Close"]) * 100
+            atr_s  = float(last_s["ATR_14"]) if pd.notna(last_s.get("ATR_14")) else cp*0.02
+            sl_s   = cp - atr_s*1.5
+            tp_s   = cp + atr_s*1.5*risk_reward
+            cr_s   = allocated_capital*(risk_per_trade/100)
+            qty_s  = max(1, int(cr_s/(atr_s*1.5)))
+            return {
+                "Stock": name, "Ticker": ticker_s.replace(".NS",""),
+                "Price ₹": f"{cp:,.2f}", "1D Chg%": f"{chg_s:+.2f}",
+                "RSI": f"{float(last_s['RSI_14']):.1f}" if pd.notna(last_s.get('RSI_14')) else "—",
+                "Signal": sig_s,
+                "Stop Loss ₹": f"{sl_s:,.2f}", "Target ₹": f"{tp_s:,.2f}",
+                "Qty": qty_s,
+                "_sig": sig_s, "_chg": chg_s
+            }
+        except Exception:
+            return None
+
     if st.button("⚡ RUN SCAN", use_container_width=True):
         scan_pool = []
         for sec in scan_sectors:
@@ -779,34 +886,18 @@ with tab_scan:
 
         results   = []
         prog      = st.progress(0, text="Scanning...")
-        for idx, (name, ticker_s) in enumerate(scan_pool):
-            try:
-                sd = load_ohlcv(ticker_s, period="1y")
-                if sd is None or len(sd) < 60:
-                    continue
-                sd = add_indicators(sd)
-                last_s = sd.iloc[-1]
-                prev_s = sd.iloc[-2]
-                sig_s  = get_signal(sd)
-                cp     = float(last_s["Close"])
-                chg_s  = (cp - float(prev_s["Close"])) / float(prev_s["Close"]) * 100
-                atr_s  = float(last_s["ATR_14"]) if pd.notna(last_s.get("ATR_14")) else cp*0.02
-                sl_s   = cp - atr_s*1.5
-                tp_s   = cp + atr_s*1.5*risk_reward
-                cr_s   = allocated_capital*(risk_per_trade/100)
-                qty_s  = max(1, int(cr_s/(atr_s*1.5)))
-                results.append({
-                    "Stock": name, "Ticker": ticker_s.replace(".NS",""),
-                    "Price ₹": f"{cp:,.2f}", "1D Chg%": f"{chg_s:+.2f}",
-                    "RSI": f"{float(last_s['RSI_14']):.1f}" if pd.notna(last_s.get('RSI_14')) else "—",
-                    "Signal": sig_s,
-                    "Stop Loss ₹": f"{sl_s:,.2f}", "Target ₹": f"{tp_s:,.2f}",
-                    "Qty": qty_s,
-                    "_sig": sig_s, "_chg": chg_s
-                })
-            except Exception:
-                pass
-            prog.progress((idx+1)/len(scan_pool), text=f"Scanning {name}...")
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+            future_to_stock = {executor.submit(scan_single_stock, name, ticker_s): (name, ticker_s) for name, ticker_s in scan_pool}
+            for idx, future in enumerate(concurrent.futures.as_completed(future_to_stock)):
+                name, ticker_s = future_to_stock[future]
+                try:
+                    res = future.result()
+                    if res is not None:
+                        results.append(res)
+                except Exception:
+                    pass
+                prog.progress((idx+1)/len(scan_pool), text=f"Scanned {name} ({idx+1}/{len(scan_pool)})")
 
         if results:
             st.session_state["scan_results"] = results
@@ -883,3 +974,4 @@ with tab_help:
 </div>
 </div>
 """, unsafe_allow_html=True)
+
