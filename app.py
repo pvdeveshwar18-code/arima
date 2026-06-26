@@ -4,7 +4,6 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-import requests
 
 st.set_page_config(page_title="Indian Stocks Forecast Pro", page_icon="📈", layout="wide")
 
@@ -91,45 +90,43 @@ st.markdown(
 
 @st.cache_data(ttl=24 * 60 * 60)
 def load_stock_universe():
-    frames = []
-    headers = {"User-Agent": "Mozilla/5.0"}
-    try:
-        res = requests.get("https://raw.githubusercontent.com/anirbanghoshsbi/NSE-LIST/master/NSE_EQUITIES_LIST.csv", headers=headers, timeout=5)
-        if res.status_code == 200:
-            from io import StringIO
-            nse = pd.read_csv(StringIO(res.text))
-            nse.columns = [c.strip().upper() for c in nse.columns]
-            sym_col = "SYMBOL" if "SYMBOL" in nse.columns else nse.columns[0]
-            name_col = "NAME OF COMPANY" if "NAME OF COMPANY" in nse.columns else sym_col
-            
-            tmp = pd.DataFrame()
-            tmp["company"] = nse[name_col].astype(str).str.strip()
-            tmp["symbol"] = nse[sym_col].astype(str).str.strip()
-            tmp["ticker"] = tmp["symbol"] + ".NS"
-            tmp["exchange"] = "NSE"
-            frames.append(tmp)
-    except Exception:
-        pass
-
-    if not frames:
-        fallback_data = {
-            "company": ["Reliance Industries Ltd", "Tata Consultancy Services", "HDFC Bank Ltd", "Infosys Ltd", "State Bank of India"],
-            "symbol": ["RELIANCE", "TCS", "HDFCBANK", "INFY", "SBIN"],
-            "ticker": ["RELIANCE.NS", "TCS.NS", "HDFCBANK.NS", "INFY.NS", "SBIN.NS"],
-            "exchange": ["NSE"] * 5
-        }
-        frames.append(pd.DataFrame(fallback_data))
-
-    uni = pd.concat(frames, ignore_index=True).drop_duplicates(subset=["ticker"])
-    uni["display"] = uni["company"].fillna(uni["symbol"]).astype(str) + " | " + uni["exchange"].astype(str) + " | " + uni["ticker"].astype(str)
-    return uni.sort_values(["company", "exchange"]).reset_index(drop=True)
+    # Direct reliable compilation of the most liquid and active major traded symbols across the Indian Stock Market (NSE)
+    nse_symbols = [
+        "RELIANCE", "TCS", "HDFCBANK", "INFY", "SBIN", "ICICIBANK", "BHARTIARTL", "LTIM", "ITC", "LT",
+        "HINDUNILVR", "BAJFINANCE", "BAJAJFINSV", "MARUTI", "TATAMOTORS", "AXISBANK", "WIPRO", "HCLTECH",
+        "SUNPHARMA", "NTPC", "POWERGRID", "TITAN", "COALINDIA", "ONGC", "ADANIENT", "ADANIPORTS",
+        "JIOFIN", "TATASTEEL", "ULTRACEMCO", "GRASIM", "JSWSTEEL", "MAHSEAMLES", "M&M", "EICHERMOT",
+        "HEROMOTOCO", "BAJAJ-AUTO", "BPCL", "IOC", "HPCL", "GAIL", "DIVISLAB", "CIPLA", "DRREDDY",
+        "APOLLOHOSP", "INDUSINDBK", "KOTAKBANK", "YESBANK", "PNB", "CANBK", "BOB", "IDFCFIRSTB",
+        "FEDERALBNK", "SWIGGY", "ZOMATO", "PAYTM", "NYKAA", "POLICYBZR", "TATACONSUM", "BRITANNIA",
+        "NESTLEIND", "VBL", "PIDILITIND", "SIEMENS", "ABB", "HAL", "BEL", "BHEL", "IRCTC", "IRFC",
+        "RECLTD", "PFC", "HUDCO", "RVNL", "CONCOR", "DLF", "LODHA", "GODREJPROP", "TRENT", "DMART",
+        "TATAPOWER", "ADANIGREEN", "ADANIPOWER", "NHPC", "SJVN", "SUZLON", "JINDALSTEL", "HINDALCO",
+        "NATIONALUM", "SAIL", "NMDC", "VEDL", "AMBUJACEM", "ACC", "SHREECEM", "DALBHARAT", "MUTHOOTFIN",
+        "CHOLAFIN", "SRF", "ASHOKLEY", "TVSMOTOR", "BALKRISIND", "MRF", "APOLLOTYRE", "PAGEIND",
+        "MAXHEALTH", "LUPIN", "AUROPHARMA", "ALCHEM", "BIOCON", "GLAND", "PEL", "ABCAPITAL",
+        "TATACMMN", "PERSISTENT", "COFORGE", "MPHASIS", "LTTS", "DIXON", "POLYCAB", "KEI", "HAVELLS",
+        "VOLTAS", "BLUESTARCO", "BATAINDIA", "RELAXO", "KALYANKJIL", "OBEROIRLTY", "PHOENIXLTD"
+    ]
+    
+    nse_symbols = sorted(list(set(nse_symbols)))
+    data = {
+        "company": [f"{sym} Traded Security" for sym in nse_symbols],
+        "symbol": nse_symbols,
+        "ticker": [f"{sym}.NS" for sym in nse_symbols],
+        "exchange": ["NSE"] * len(nse_symbols)
+    }
+    
+    uni = pd.DataFrame(data)
+    uni["display"] = uni["symbol"] + " | " + uni["company"] + " | " + uni["ticker"]
+    return uni
 
 universe = load_stock_universe()
 
 if "main_ticker" not in st.session_state:
     st.session_state.main_ticker = "TCS.NS"
 if "selected_company" not in st.session_state:
-    st.session_state.selected_company = "Tata Consultancy Services"
+    st.session_state.selected_company = "TCS Traded Security"
 if "selected_exchange" not in st.session_state:
     st.session_state.selected_exchange = "NSE"
 
@@ -197,7 +194,9 @@ with st.sidebar:
 # ==========================================================
 if app_mode == "🔍 Asset Deep-Dive":
     st.markdown("### 🔍 Stock Deep-Dive Panel")
-    selected_display = st.selectbox("Select Asset Focus Universe", options=universe["display"].tolist())
+    
+    # Simple open selector interface prevents UI bugs
+    selected_display = st.selectbox("Select Asset Focus Universe", options=universe["display"].tolist(), index=universe["ticker"].tolist().index(st.session_state.main_ticker) if st.session_state.main_ticker in universe["ticker"].tolist() else 0)
     
     if selected_display:
         row = universe[universe["display"] == selected_display].iloc[0]
@@ -234,7 +233,7 @@ elif app_mode == "🎯 Buy Recommendations Scanner":
     st.markdown("### ⚡ Full National Stock Exchange (NSE) Scanner Engine")
     st.markdown(f"Total traceable securities indexed: **{len(universe)} listed listings**.")
     
-    scan_limit = st.number_input("Scan Limit (Adjust list size to prevent timeout spikes)", min_value=10, max_value=3000, value=150, step=50)
+    scan_limit = st.number_input("Scan Limit (Adjust list size to prevent timeout spikes)", min_value=10, max_value=3000, value=120, step=10)
     
     if st.button("🚀 Execute Broad Market Scan", use_container_width=True):
         tickers_to_scan = universe["ticker"].head(int(scan_limit)).tolist()
@@ -242,13 +241,12 @@ elif app_mode == "🎯 Buy Recommendations Scanner":
         st.info("Downloading historical data frames in vectorized layout chunks...")
         
         try:
-            # Removed unexpected show_errors arg to ensure yfinance compatibility
+            # Batch request architecture is clean and robust
             raw_data = yf.download(tickers_to_scan, period="6mo", interval=interval, group_by='ticker', auto_adjust=False, progress=False)
             
             results = []
             for ticker in tickers_to_scan:
                 try:
-                    # Check safe execution regardless of multi-index return structural variants
                     if isinstance(raw_data.columns, pd.MultiIndex):
                         if ticker not in raw_data.columns.levels[0]: continue
                         df_ticker = raw_data[ticker].dropna(subset=["Close"]).reset_index()
