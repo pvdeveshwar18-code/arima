@@ -185,7 +185,6 @@ with st.sidebar:
     elif search_text.strip() != "":
         st.caption("✨ Custom Ticker detected. Press 'Run Analysis' to process it directly!")
 
-    # Check for direct text entries ending with an exchange extension
     cleaned_input = search_text.strip().upper()
     if cleaned_input.endswith(".NS") or cleaned_input.endswith(".BO"):
         st.session_state.main_ticker = cleaned_input
@@ -209,7 +208,6 @@ with st.sidebar:
     
     if st.button("Run Analysis", use_container_width=True):
         raw_text = search_text.strip().upper()
-        # Handle simple word inputs without extension (e.g., ETERNAL -> ETERNAL.NS)
         if raw_text and not (raw_text.endswith(".NS") or raw_text.endswith(".BO")) and matches.empty:
             st.session_state.main_ticker = f"{raw_text}.NS"
             st.session_state.selected_company = raw_text
@@ -452,21 +450,4 @@ if st.session_state.trigger_analysis:
                 bias_color = "#00d4aa" if signal == "Buy" else ("#ef4444" if signal == "Exit" else "#94a3b8")
                 st.markdown("<p style='margin:0; font-size:0.85rem; color:#94a3b8; font-weight:600; text-transform:uppercase;'>Tactical Bias</p>", unsafe_allow_html=True)
                 st.markdown(f"<h2 style='margin:4px 0; font-weight:800; color:{bias_color};'>{signal}</h2>", unsafe_allow_html=True)
-                st.markdown(f"<span style='font-size:0.75rem; color:{bias_color}; font-weight:700;'>Quant Signal</span>", unsafe_allow_html=True)
-
-        st.markdown("<div style='margin-top: 2rem;'></div>", unsafe_allow_html=True)
-
-        # 2. SEAMLESS NAVIGATION TABS
-        t1, t2, t3, t4, t5 = st.tabs([
-            "📊 Core Analytics", 
-            "🤖 Predictive Intelligence", 
-            "🧪 Strategy Validation", 
-            "🌐 Market Universe", 
-            "🧬 Order Flow Architecture"
-        ])
-
-        with t1:
-            st.markdown("<h4 style='color:#38bdf8; font-weight:700; margin-bottom:1rem;'>Price Action & Moving Averages</h4>", unsafe_allow_html=True)
-            fig = go.Figure()
-            fig.add_trace(go.Scatter(x=base["Date"], y=base["Close"], name="Close Price", line=dict(color="#00d4aa", width=2)))
-            fig.add_trace(go.Scatter(x=base["Date"], y=base["SMA_20"], name="Fast (SMA 20)", line=dict(
+                st.markdown(f"<span style='font-size:0.75rem; color:{bias_color}; font-weight:700;'>Quant Signal</span>", unsafe_allow_html=True
