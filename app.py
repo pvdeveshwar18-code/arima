@@ -203,6 +203,7 @@ with st.sidebar:
     st.markdown("⚙️ **Advanced Strategic Parameters**")
     allocated_capital = st.number_input("Total Trade Capital (₹)", min_value=1000, value=100000, step=5000)
     risk_per_trade = st.slider("Max Capital Risk Per Trade (%)", 0.5, 5.0, 1.5, step=0.1)
+    risk_reward_ratio = st.slider("Target Risk-to-Reward Ratio (1:X)", 1.5, 4.0, 2.0, step=0.5)
     
     backtest_split = st.slider("Backtest split (%)", 60, 90, 80)
     show_raw = st.checkbox("Show raw data", value=False)
@@ -295,7 +296,6 @@ def backtest_crossover(df):
     d["Equity"] = (1 + d["Strategy_Return"].fillna(0)).cumprod()
     d["BuyHold"] = (1 + d["Return"].fillna(0)).cumprod()
     
-    # Calculate Max Drawdown
     cum_max = d["Equity"].cummax()
     d["Drawdown"] = (d["Equity"] - cum_max) / cum_max
     max_dd = float(d["Drawdown"].min())
@@ -372,9 +372,7 @@ if st.session_state.trigger_analysis:
             st.markdown("<h4 style='color:#38bdf8; font-weight:700;'>Price Action & Momentum Overlays</h4>", unsafe_allow_html=True)
             show_bb = st.checkbox("Overlay Bollinger Volatility Bands (20, 2)", value=True)
             
-            # Subplot Configuration: Panel 1 = Price/MA, Panel 2 = RSI Matrix
             fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.08, row_heights=[0.7, 0.3])
-            
             fig.add_trace(go.Scatter(x=base["Date"], y=base["Close"], name="Close Price", line=dict(color="#00d4aa", width=2)), row=1, col=1)
             fig.add_trace(go.Scatter(x=base["Date"], y=base["SMA_20"], name="Fast (SMA 20)", line=dict(color="#38bdf8", width=1.5, dash="dash")), row=1, col=1)
             fig.add_trace(go.Scatter(x=base["Date"], y=base["SMA_50"], name="Slow (SMA 50)", line=dict(color="#a78bfa", width=1.5)), row=1, col=1)
@@ -383,7 +381,6 @@ if st.session_state.trigger_analysis:
                 fig.add_trace(go.Scatter(x=base["Date"], y=base["BB_Upper"], name="BB Upper Band", line=dict(color="rgba(239,68,68,0.35)", width=1)), row=1, col=1)
                 fig.add_trace(go.Scatter(x=base["Date"], y=base["BB_Lower"], name="BB Lower Band", line=dict(color="rgba(239,68,68,0.35)", width=1), fill='tonexty'), row=1, col=1)
 
-            # RSI Lower Subplot
             fig.add_trace(go.Scatter(x=base["Date"], y=base["RSI_14"], name="RSI (14)", line=dict(color="#fbbf24", width=1.5)), row=2, col=1)
             fig.add_shape(type="line", x0=base["Date"].iloc[0], x1=base["Date"].iloc[-1], y0=70, y1=70, line=dict(color="rgba(239,68,68,0.5)", dash="dot"), row=2, col=1)
             fig.add_shape(type="line", x0=base["Date"].iloc[0], x1=base["Date"].iloc[-1], y0=30, y1=30, line=dict(color="rgba(34,197,94,0.5)", dash="dot"), row=2, col=1)
@@ -397,7 +394,6 @@ if st.session_state.trigger_analysis:
             fig.update_yaxes(gridcolor="rgba(255,255,255,0.05)", side="right", row=1, col=1)
             fig.update_yaxes(gridcolor="rgba(255,255,255,0.05)", side="right", range=[10, 90], row=2, col=1)
             fig.update_xaxes(gridcolor="rgba(255,255,255,0.05)")
-            
             st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
 
         with t2:
@@ -406,7 +402,6 @@ if st.session_state.trigger_analysis:
             
             fig_fc = go.Figure()
             fig_fc.add_trace(go.Scatter(x=base["Date"].tail(90), y=base["Close"].tail(90), name="Historical Anchor", line=dict(color="#64748b", width=2)))
-            
             if arima_pred is not None:
                 fig_fc.add_trace(go.Scatter(x=fc_idx, y=arima_pred.values, name="ARIMA Regression ML", line=dict(color="#ef4444", width=2.5)))
             if ets_pred is not None:
@@ -423,41 +418,56 @@ if st.session_state.trigger_analysis:
             st.plotly_chart(fig_fc, use_container_width=True, config={'displayModeBar': False})
 
         with t3:
-            st.markdown("<h4 style='color:#38bdf8; font-weight:700;'>Strategy Optimization & Position Risk Sizer</h4>", unsafe_allow_html=True)
+            st.markdown("<h4 style='color:#38bdf8; font-weight:700;'>Strategy Optimization & Execution Targets</h4>", unsafe_allow_html=True)
             
-            # Position Sizing Logic Calculations
+            # Risk Sizing & Price Bracket Mechanics
             current_atr = base["ATR_14"].iloc[-1] if pd.notna(base["ATR_14"].iloc[-1]) else (last_close * 0.02)
             allowed_rupees_at_risk = allocated_capital * (risk_per_trade / 100.0)
-            stop_loss_distance = current_atr * 1.5
             
-            if stop_loss_distance > 0:
-                recommended_shares = int(allowed_rupees_at_risk // stop_loss_distance)
-            else:
-                recommended_shares = 0
-                
+            # Risk Brackets Based on Execution Signals
+            stop_loss_distance = current_atr * 1.5
+            recommended_shares = int(allowed_rupees_at_risk // stop_loss_distance) if stop_loss_distance > 0 else 0
+            
+            # Bracket Levels
+            stop_loss_price = last_close - stop_loss_distance
+            target_profit_price = last_close + (stop_loss_distance * risk_reward_ratio)
+            
             rc1, rc2, rc3 = st.columns(3)
             with rc1:
                 st.metric("Strategy Historical Return", f"{strat_ret:.2%}", delta=f"vs Bench {bh_ret:.2%}")
             with rc2:
-                st.metric("Maximum Backtest Drawdown", f"{max_dd:.2%}", delta="Peak-to-Trough Pain Factor", delta_color="inverse")
+                st.metric("Maximum Backtest Drawdown", f"{max_dd:.2%}", delta="Peak-to-Trough Pain", delta_color="inverse")
             with rc3:
-                st.metric("Recommended Share Execution Size", f"{recommended_shares} Units", f"Risk Target: ₹{allowed_rupees_at_risk:,.2f}")
+                st.metric("Position Allocation", f"{recommended_shares} Units", f"Risk Budget: ₹{allowed_rupees_at_risk:,.2f}")
                 
-            st.caption(f"ℹ️ **Position Sizing Engine Logic:** Risking {risk_per_trade}% of total capital with a technical Stop-Loss placed 1.5x ATR below your execution point.")
+            # Upgraded Actionable Risk Bracket Callouts
+            st.markdown("---")
+            st.markdown("🎯 **Active Execution Directives**")
+            tc1, tc2, tc3 = st.columns(3)
+            with tc1:
+                with st.container(border=True):
+                    st.write("🧱 **Entry Threshold anchor**")
+                    st.subheader(f"₹{last_close:,.2f}")
+            with tc2:
+                with st.container(border=True):
+                    st.write("🛑 **Technical Stop-Loss (1.5x ATR)**")
+                    st.subheader(f"₹{stop_loss_price:,.2f}")
+            with tc3:
+                with st.container(border=True):
+                    st.write(f"🎁 **Take-Profit Target (1:{risk_reward_ratio})**")
+                    st.subheader(f"₹{target_profit_price:,.2f}")
+                    
+            st.caption(f"ℹ️ Sizing parameters map directly against your custom sidebar dashboard inputs.")
             
             fig_bt = go.Figure()
             fig_bt.add_trace(go.Scatter(x=backtested["Date"], y=backtested["Equity"], name="Strategy Momentum Equity Curve", line=dict(color="#00d4aa", width=2)))
             fig_bt.add_trace(go.Scatter(x=backtested["Date"], y=backtested["BuyHold"], name="Benchmark Buy & Hold Track", line=dict(color="#38bdf8", dash="dash")))
-            fig_bt.update_layout(
-                paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                font=dict(color="#e5e7eb", family="Inter"), margin=dict(l=10, r=10, t=10, b=10)
-            )
+            fig_bt.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font=dict(color="#e5e7eb", family="Inter"), margin=dict(l=10, r=10, t=10, b=10))
             fig_bt.update_yaxes(gridcolor="rgba(255,255,255,0.05)", side="right")
             st.plotly_chart(fig_bt, use_container_width=True, config={'displayModeBar': False})
 
         with t4:
             st.markdown("<h4 style='color:#38bdf8; font-weight:700;'>Corporate Fundamental Snapshot</h4>", unsafe_allow_html=True)
-            
             fc1, fc2, fc3 = st.columns(3)
             with fc1:
                 st.metric("Trailing P/E Ratio", f"{f_metrics['pe']:.2f}" if pd.notna(f_metrics['pe']) else "N/A")
@@ -467,7 +477,6 @@ if st.session_state.trigger_analysis:
                 st.metric("Historical Asset Beta", f"{f_metrics['beta']:.2f}" if pd.notna(f_metrics['beta']) else "N/A")
                 
             st.markdown(f"**Corporate Background Summary Profile:**\n\n>{f_metrics['summary']}")
-            
             if show_raw:
                 st.markdown("---")
                 st.dataframe(base.tail(30), use_container_width=True)
