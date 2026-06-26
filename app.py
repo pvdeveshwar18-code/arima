@@ -19,8 +19,8 @@ st.markdown(
 html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
 .stApp {
     background:
-        radial-gradient(circle at top left, rgba(0,212,170,0.10), transparent 25%),
-        radial-gradient(circle at top right, rgba(56,189,248,0.10), transparent 20%),
+        radial-gradient(circle at top left, rgba(0,212,170,0.12), transparent 25%),
+        radial-gradient(circle at top right, rgba(56,189,248,0.12), transparent 20%),
         linear-gradient(180deg, #050816 0%, #0b1020 100%);
 }
 section[data-testid="stSidebar"] {
@@ -28,23 +28,19 @@ section[data-testid="stSidebar"] {
     border-right: 1px solid rgba(255,255,255,0.06);
 }
 .block-container { padding-top: 1.2rem; padding-bottom: 2rem; }
-div[data-testid="stMetric"] {
-    background: rgba(15, 23, 42, 0.72);
-    border: 1px solid rgba(255,255,255,0.08);
-    border-radius: 18px;
-    padding: 14px;
-    box-shadow: 0 10px 30px rgba(0,0,0,0.18);
-}
 div[data-baseweb="tab-list"] { gap: 10px; }
 button[data-baseweb="tab"] {
     border-radius: 999px !important;
-    padding: 0.45rem 1rem !important;
+    padding: 0.45rem 1.2rem !important;
     background: rgba(15, 23, 42, 0.55) !important;
     border: 1px solid rgba(255,255,255,0.06) !important;
+    color: #94a3b8 !important;
+    font-weight: 600 !important;
 }
 button[data-baseweb="tab"][aria-selected="true"] {
-    background: linear-gradient(90deg, rgba(0,212,170,0.35), rgba(56,189,248,0.35)) !important;
+    background: linear-gradient(90deg, rgba(0,212,170,0.25), rgba(56,189,248,0.25)) !important;
     border: 1px solid rgba(0,212,170,0.40) !important;
+    color: #00d4aa !important;
 }
 .stButton > button {
     background: linear-gradient(90deg, #00d4aa, #38bdf8) !important;
@@ -53,15 +49,21 @@ button[data-baseweb="tab"][aria-selected="true"] {
     border-radius: 999px !important;
     font-weight: 700 !important;
     padding: 0.6rem 1.2rem !important;
+    transition: all 0.2s ease-in-out;
+}
+.stButton > button:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0,212,170,0.3);
 }
 .stTextInput input, .stTextArea textarea, .stSelectbox div, .stMultiSelect div {
     background: rgba(15, 23, 42, 0.85) !important;
     color: #e5e7eb !important;
+    border-radius: 8px !important;
 }
 ::-webkit-scrollbar { width: 10px; }
 ::-webkit-scrollbar-thumb { background: #334155; border-radius: 999px; }
 .suggestion-box {
-    background: rgba(15, 23, 42, 0.92);
+    background: rgba(15, 23, 42, 0.95);
     border: 1px solid rgba(255,255,255,0.08);
     border-radius: 14px;
     padding: 0.5rem;
@@ -86,11 +88,11 @@ button[data-baseweb="tab"][aria-selected="true"] {
 
 st.markdown(
     """
-<div style="margin-bottom: 1rem;">
+<div style="margin-bottom: 1.5rem;">
     <h1 style="margin:0; font-size:2.3rem; font-weight:800; background: linear-gradient(90deg,#00d4aa,#38bdf8,#a78bfa); -webkit-background-clip:text; -webkit-text-fill-color:transparent;">
         Indian Stocks Forecast Pro
     </h1>
-    <p style="margin:0.25rem 0 0 0; color: rgba(229,231,235,.65);">
+    <p style="margin:0.25rem 0 0 0; color: rgba(229,231,235,.65); font-size: 0.95rem;">
         Forecasts, indicators, backtesting, market structure, and swing-trade context
     </p>
 </div>
@@ -103,7 +105,6 @@ def load_stock_universe():
     frames = []
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
     
-    # Try Live NSE Scraping safely with short network timeout
     try:
         res = requests.get("https://nsearchives.nseindia.com/content/equities/sec_list.csv", headers=headers, timeout=3)
         if res.status_code == 200:
@@ -120,7 +121,6 @@ def load_stock_universe():
     except Exception:
         pass
 
-    # Safe Local Contingency Mapping if remote assets freeze
     if not frames:
         fallback_data = {
             "company": ["Reliance Industries Ltd", "Tata Consultancy Services", "HDFC Bank Ltd", "Infosys Ltd", "State Bank of India", "ICICI Bank Ltd", "ITC Ltd", "Larsen & Toubro Ltd", "Bharti Airtel Ltd", "Hindustan Unilever Ltd"],
@@ -136,7 +136,6 @@ def load_stock_universe():
 
 universe = load_stock_universe()
 
-# State Management Pipeline
 if "main_ticker" not in st.session_state:
     st.session_state.main_ticker = "TCS.NS"
 if "selected_company" not in st.session_state:
@@ -186,7 +185,6 @@ with st.sidebar:
     elif search_text.strip() != "":
         st.caption("✨ Custom Ticker detected. Press 'Run Analysis' to process it directly!")
 
-    # Live Override Logic for Custom Entries (like eternal.ns)
     cleaned_input = search_text.strip().upper()
     if cleaned_input.endswith(".NS") or cleaned_input.endswith(".BO"):
         st.session_state.main_ticker = cleaned_input
@@ -210,7 +208,6 @@ with st.sidebar:
     
     if st.button("Run Analysis", use_container_width=True):
         raw_text = search_text.strip().upper()
-        # Handle cases where extension is omitted (e.g. typing just 'ETERNAL')
         if raw_text and not (raw_text.endswith(".NS") or raw_text.endswith(".BO")) and matches.empty:
             st.session_state.main_ticker = f"{raw_text}.NS"
             st.session_state.selected_company = raw_text
@@ -393,6 +390,7 @@ def amd_state(df):
     trend = df["Close"].iloc[-1] - df["Close"].iloc[-15]
     return "Distribution" if trend > 0 else "Accumulation"
 
+
 # Main Core Framework Execution
 if st.session_state.trigger_analysis:
     main_ticker = st.session_state.main_ticker
@@ -423,77 +421,35 @@ if st.session_state.trigger_analysis:
                 mae, rmse, mape = forecast_metrics(base["Close"].iloc[split_idx:].values, eval_fc.predicted_mean.values)
             except: pass
 
-        # Structural Metrics Board
+        # 1. ENHANCED GLASSMORPHIC KPI BOARD
         c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Last Close", f"₹{last_close:,.2f}")
-        c2.metric("Period Return", f"{ytd_return:+.2f}%")
-        c3.metric("Annualized Volatility", f"{annual_vol:.2%}")
-        c4.metric("Tactical Bias", signal)
 
-        t1, t2, t3, t4, t5 = st.tabs(["Overview", "Forecasting Engine", "Backtest Strategy", "Peer Comparison", "Market Structure"])
+        with c1:
+            st.markdown(
+                f"""
+                <div style="background: rgba(15, 23, 42, 0.65); border: 1px solid rgba(255,255,255,0.08); backdrop-filter: blur(12px); border-radius: 16px; padding: 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.25);">
+                    <p style="margin:0; font-size:0.85rem; color: #94a3b8; font-weight:600; text-transform: uppercase; letter-spacing: 0.05em;">Last Close</p>
+                    <h2 style="margin: 8px 0 0 0; font-size:1.8rem; font-weight:800; color:#ffffff;">₹{last_close:,.2f}</h2>
+                    <span style="font-size:0.75rem; color:#00d4aa; background:rgba(0,212,170,0.1); padding: 2px 8px; border-radius:999px; font-weight:700;">● Live Feed</span>
+                </div>
+                """, 
+                unsafe_allow_html=True
+            )
 
-        with t1:
-            st.subheader("Price Metrics & Indicators")
-            fig = go.Figure()
-            fig.add_trace(go.Scatter(x=base["Date"], y=base["Close"], name="Close Price", line=dict(color="#60a5fa", width=2)))
-            fig.add_trace(go.Scatter(x=base["Date"], y=base["SMA_20"], name="SMA 20", line=dict(color="#f59e0b", width=1.5)))
-            fig.add_trace(go.Scatter(x=base["Date"], y=base["SMA_50"], name="SMA 50", line=dict(color="#10b981", width=1.5)))
-            fig.update_layout(template="plotly_dark", height=450, margin=dict(l=20, r=20, t=20, b=20))
-            st.plotly_chart(fig, use_container_width=True)
-            
-            if show_raw:
-                st.dataframe(base.tail(30), use_container_width=True)
+        with c2:
+            ret_color = "#00d4aa" if ytd_return >= 0 else "#ef4444"
+            ret_bg = "rgba(0,212,170,0.1)" if ytd_return >= 0 else "rgba(239,68,68,0.1)"
+            st.markdown(
+                f"""
+                <div style="background: rgba(15, 23, 42, 0.65); border: 1px solid rgba(255,255,255,0.08); backdrop-filter: blur(12px); border-radius: 16px; padding: 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.25);">
+                    <p style="margin:0; font-size:0.85rem; color: #94a3b8; font-weight:600; text-transform: uppercase; letter-spacing: 0.05em;">Period Return</p>
+                    <h2 style="margin: 8px 0 0 0; font-size:1.8rem; font-weight:800; color:{ret_color};">{ytd_return:+.2f}%</h2>
+                    <span style="font-size:0.75rem; color:{ret_color}; background:{ret_bg}; padding: 2px 8px; border-radius:999px; font-weight:700;">{'▲' if ytd_return >= 0 else '▼'} Performance</span>
+                </div>
+                """, 
+                unsafe_allow_html=True
+            )
 
-        with t2:
-            st.subheader("Algorithmic Horizon Forecasts")
-            fc_idx = pd.bdate_range(base["Date"].iloc[-1] + pd.Timedelta(days=1), periods=steps)
-            forecast_df = pd.DataFrame(index=fc_idx)
-            
-            fig_fc = go.Figure()
-            fig_fc.add_trace(go.Scatter(x=base["Date"].tail(90), y=base["Close"].tail(90), name="Recent Actuals", line=dict(color="#94a3b8")))
-            
-            if arima_pred is not None:
-                forecast_df["ARIMA"] = arima_pred.values
-                fig_fc.add_trace(go.Scatter(x=fc_idx, y=forecast_df["ARIMA"], name="ARIMA Forecast", line=dict(color="#ef4444", width=2.5)))
-            if ets_pred is not None:
-                forecast_df["ETS"] = ets_pred.values
-                fig_fc.add_trace(go.Scatter(x=fc_idx, y=forecast_df["ETS"], name="Exponential Smoothing", line=dict(color="#22c55e", width=2.5, dash="dot")))
-                
-            fig_fc.update_layout(template="plotly_dark", height=450)
-            st.plotly_chart(fig_fc, use_container_width=True)
-            st.caption(f"Historical Holdout Test Scores: MAE: {mae:.2f} | RMSE: {rmse:.2f} | MAPE: {mape:.2f}%")
-
-        with t3:
-            st.subheader("Crossover Backtest Results")
-            st.write(f"Strategy Cumulative Performance: **{strat_ret:.2%}** vs Buy & Hold: **{bh_ret:.2%}**")
-            fig_bt = go.Figure()
-            fig_bt.add_trace(go.Scatter(x=backtested["Date"], y=backtested["Equity"], name="Strategy Returns", line=dict(color="#00d4aa")))
-            fig_bt.add_trace(go.Scatter(x=backtested["Date"], y=backtested["BuyHold"], name="Bench Buy & Hold", line=dict(color="#38bdf8", dash="dash")))
-            fig_bt.update_layout(template="plotly_dark", height=450)
-            st.plotly_chart(fig_bt, use_container_width=True)
-
-        with t4:
-            st.subheader("Universe Snapshot")
-            st.write("Cross-comparison tracking index pool:")
-            st.dataframe(universe.head(10), use_container_width=True)
-
-        with t5:
-            st.subheader("Order Flow & Liquidity Distribution")
-            avwap_series = anchored_vwap(base)
-            vp_df = volume_profile(base)
-            sweep_txt, _ = liquidity_sweep(base)
-            amd_lbl = amd_state(base)
-            
-            m1, m2, m3 = st.columns(3)
-            m1.metric("Structural Range State", amd_lbl)
-            m2.metric("Liquidity Dynamics", sweep_txt)
-            m3.metric("Sampled Profile Blocks", len(vp_df))
-
-            fig_ms = go.Figure()
-            fig_ms.add_trace(go.Scatter(x=base["Date"], y=base["Close"], name="Underlying Close", line=dict(color="#60a5fa")))
-            if not avwap_series.empty:
-                fig_ms.add_trace(go.Scatter(x=avwap_series.index, y=avwap_series.values, name="Anchored VWAP", line=dict(color="#a78bfa", width=2)))
-            fig_ms.update_layout(template="plotly_dark", height=450)
-            st.plotly_chart(fig_ms, use_container_width=True)
-else:
-    st.info("👈 Set parameters inside the left control panel and select 'Run Analysis' to process computational indicators.")
+        with c3:
+            vol_color = "#ef4444" if annual_vol > 0.30 else "#38bdf8"
+            vol_bg = "rgba(239,68,68,0.1)" if annual_vol > 0.30 else "rgba(56,189,248,0
