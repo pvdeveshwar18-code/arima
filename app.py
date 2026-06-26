@@ -6,7 +6,7 @@ import datetime
 import plotly.graph_objects as go
 
 # ==========================================================
-# 1. XERCES PREMIUM CORES CUSTOM DESIGN CONFIGURATION
+# 1. XERCES UI CONTROLS & GLASSMORPHISM CONTAINER SYSTEM
 # ==========================================================
 st.set_page_config(page_title="XERCES // QUANT ENGINE", page_icon="⚡", layout="wide")
 
@@ -15,7 +15,7 @@ st.markdown(
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;800;900&family=Space+Mono&family=Inter:wght@300;400;500;600&display=swap');
 
-/* Main Body Framework Styling */
+/* Base Engine Framework Layout */
 html, body, [class*="css"] {
     font-family: 'Inter', sans-serif;
 }
@@ -29,7 +29,7 @@ section[data-testid="stSidebar"] {
     border-right: 1px solid rgba(0, 200, 255, 0.15) !important;
 }
 
-/* XERCES Typography & Cyber Branded Elements */
+/* Cyberpunk Accent Typography Branding */
 .xerces-title {
     font-family: 'Orbitron', sans-serif;
     font-weight: 900;
@@ -57,7 +57,7 @@ section[data-testid="stSidebar"] {
     margin-bottom: 10px;
 }
 
-/* Dark Glassmorphism Performance Cards */
+/* Glassmorphism Structural Metric Cards */
 .glass-card {
     background: rgba(7, 18, 32, 0.65);
     border: 1px solid rgba(0, 200, 255, 0.15);
@@ -82,7 +82,7 @@ section[data-testid="stSidebar"] {
     margin-top: 2px;
 }
 
-/* Interactive Top Tabs Override styling */
+/* Custom Interactive Tabs */
 div[data-baseweb="tab-list"] { gap: 4px; }
 button[data-baseweb="tab"] {
     font-family: 'Space Mono', monospace !important;
@@ -103,12 +103,12 @@ button[data-baseweb="tab"][aria-selected="true"] {
 )
 
 # ==========================================================
-# 2. BRANDING PLATFORM & LIVE SYSTEM CLOCK
+# 2. BRANDING PLATFORM & LIVE CLOCK NODE
 # ==========================================================
 col_title, col_clock = st.columns([2, 1])
 with col_title:
     st.markdown('<h1 class="xerces-title">XERCES // QUANT CORES</h1>', unsafe_allow_html=True)
-    st.markdown('<p class="telemetry-tag">[ RADAR STATUS: OPERATIONAL // WORKSPACE FRAME UNLOCKED ]</p>', unsafe_allow_html=True)
+    st.markdown('<p class="telemetry-tag">[ RADAR CHANNELS: STREAMING UNLOCKED // RUN INITIALIZED ]</p>', unsafe_allow_html=True)
 
 with col_clock:
     current_time = datetime.datetime.now().strftime("%H:%M:%S UTC")
@@ -126,7 +126,7 @@ with col_clock:
 st.markdown("<hr style='border-color: rgba(0,200,255,0.12); margin: 0.65rem 0;'>", unsafe_allow_html=True)
 
 # ==========================================================
-# 3. STOCK ASSET DATA FETCHING CORES
+# 3. TECHNICAL MATRIX CALCULATION CORE
 # ==========================================================
 @st.cache_data(ttl=86400)
 def load_stock_universe():
@@ -170,7 +170,7 @@ if "last_scan_data" not in st.session_state:
     st.session_state.last_scan_data = None
 
 # ==========================================================
-# 4. SIDEBAR SETTINGS CONTROL NODE
+# 4. SIDEBAR SETTINGS HUB CONTROLS
 # ==========================================================
 with st.sidebar:
     st.markdown("<p class='telemetry-tag' style='color:#00c8ff; font-weight:700; margin-bottom:5px;'>[ 🛡️ RISK MATRIX CONTROLS ]</p>", unsafe_allow_html=True)
@@ -211,3 +211,147 @@ with st.sidebar:
                 units = int(capital_at_risk // (atr * 1.5)) if atr > 0 else 0
                 
                 above_trend = c_price > last_s_row["SMA_20"]
+                
+                scan_results.append({
+                    "Ticker": ticker.replace(".NS", ""),
+                    "Price": f"₹{c_price:,.2f}",
+                    "RSI": f"{last_s_row['RSI_14']:.1f}",
+                    "Signal": sig,
+                    "Target Size": f"{units} Units",
+                    "Stop-Loss": f"₹{sl_val:,.2f}",
+                    "Take-Profit": f"₹{tp_val:,.2f}",
+                    "raw_signal": sig,
+                    "pct_change": pct_change,
+                    "above_trend": above_trend
+                })
+            except:
+                continue
+            scan_bar.progress((idx + 1) / len(all_tickers), text=f"Syncing: {ticker}")
+            
+        if scan_results:
+            st.session_state.last_scan_data = scan_results
+            st.sidebar.success("XERCES analysis updated.")
+
+# ==========================================================
+# 5. FIXED GLOBAL RADAR CONTROLS (AVOIDS RENDER BLANKOUTS)
+# ==========================================================
+selected_ticker = st.selectbox("🎯 SELECT CURRENT TARGET RADAR TICKER", options=universe["symbol"].tolist(), index=0)
+full_ticker = f"{selected_ticker}.NS"
+
+# Total Account Matrix Row
+n1, n2, n3, n4 = st.columns(4)
+with n1:
+    st.markdown(f'<div class="glass-card"><p class="glass-label">[ Total Cash Pool ]</p><div class="glass-value" style="color:#ddeeff;">₹{allocated_capital:,.2f}</div></div>', unsafe_allow_html=True)
+with n2:
+    st.markdown(f'<div class="glass-card"><p class="glass-label">[ Stock Invested ]</p><div class="glass-value" style="color:#00e87a;">₹0.00</div></div>', unsafe_allow_html=True)
+with n3:
+    st.markdown(f'<div class="glass-card"><p class="glass-label">[ Unallocated Cash ]</p><div class="glass-value" style="color:#ffcc00;">₹{allocated_capital:,.2f}</div></div>', unsafe_allow_html=True)
+with n4:
+    st.markdown(f'<div class="glass-card"><p class="glass-label">[ Net Total Wealth ]</p><div class="glass-value" style="color:#00c8ff;">₹{allocated_capital:,.2f}</div></div>', unsafe_allow_html=True)
+
+st.markdown("<br>", unsafe_allow_html=True)
+
+# ==========================================================
+# 6. APP NAVIGATION MATRIX WORKSPACES
+# ==========================================================
+view_tab, backtest_tab, paper_tab, settings_tab, help_tab = st.tabs([
+    "🔍 TERMINAL ANALYSIS", 
+    "📈 BACKTEST ENGINE",
+    "💵 REAL-TIME PAPER TRADING",
+    "⚙️ STRATEGY SETTINGS",
+    "❓ ENGINE CORE MANUAL"
+])
+
+# ----------------------------------------------------------
+# TAB 1: TERMINAL ARCHITECTURE PANEL
+# ----------------------------------------------------------
+with view_tab:
+    with st.spinner("Decoding asset telemetry streams..."):
+        try:
+            df_asset = yf.download(full_ticker, period="1y", interval="1d", auto_adjust=False, progress=False)
+            if df_asset is not None and not df_asset.empty:
+                if isinstance(df_asset.columns, pd.MultiIndex):
+                    df_asset.columns = [c[0] for c in df_asset.columns]
+                df_asset = df_asset.reset_index()
+                
+                df = add_indicators(df_asset)
+                last_row = df.iloc[-1]
+                last_close = float(last_row["Close"])
+                signal = get_signal(df)
+                
+                # Split Dashboard Structure Layout Panel
+                left_panel, right_panel = st.columns([2.2, 1])
+                
+                with left_panel:
+                    st.markdown(f'<p class="section-header">[ 📊 ACTIVE PLOT INTERFACE FOR {selected_ticker} ]</p>', unsafe_allow_html=True)
+                    fig = go.Figure()
+                    fig.add_trace(go.Scatter(x=df["Date"], y=df["Close"], name="Close Value", line=dict(color="#00c8ff", width=2)))
+                    if "SMA_20" in df.columns:
+                        fig.add_trace(go.Scatter(x=df["Date"], y=df["SMA_20"], name="SMA 20 Core", line=dict(color="#00e87a", width=1.5, dash="dash")))
+                    fig.update_layout(
+                        margin=dict(l=10, r=10, t=10, b=10), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                        font=dict(color="#ddeeff", family="Space Mono"), height=380,
+                        xaxis=dict(gridcolor="rgba(0,200,255,0.04)"), yaxis=dict(gridcolor="rgba(0,200,255,0.04)")
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
+                    
+                with right_panel:
+                    st.markdown('<p class="section-header">[ ⚡ ASSET ENGINE PROFILE ]</p>', unsafe_allow_html=True)
+                    st.markdown(f'<div class="glass-card"><p class="glass-label">[ Last Close Price ]</p><div class="glass-value" style="color:#ddeeff;">₹{last_close:,.2f}</div></div>', unsafe_allow_html=True)
+                    st.markdown(f'<div class="glass-card"><p class="glass-label">[ RSI Momentum Index ]</p><div class="glass-value" style="color:#00c8ff;">{last_row["RSI_14"]:.1f}</div></div>', unsafe_allow_html=True)
+                    
+                    color_map = {"BUY": "#00e87a", "SELL": "#ff3355", "HOLD": "#ffcc00"}
+                    st.markdown(f'<div class="glass-card"><p class="glass-label">[ Structural Signal Bias ]</p><div class="glass-value" style="color:{color_map.get(signal)};">{signal}</div></div>', unsafe_allow_html=True)
+                    
+                    vol = last_row["Volatility_20"] if pd.notna(last_row["Volatility_20"]) else 0.0
+                    st.markdown(f'<div class="glass-card"><p class="glass-label">[ Annualized Sigma Volatility ]</p><div class="glass-value" style="color:#7c4dff;">{vol:.1%}</div></div>', unsafe_allow_html=True)
+        except Exception as e:
+            st.error(f"Telemetry load error: {e}")
+
+    # Bottom Multi-Stock Background Scanner Output Grid
+    st.markdown("---")
+    st.markdown('<p class="section-header">[ 📡 MULTI-STOCK SCANNED MARKET MATRIX ]</p>', unsafe_allow_html=True)
+    
+    if st.session_state.last_scan_data is not None:
+        df_final = pd.DataFrame(st.session_state.last_scan_data)
+        grid_filter = st.radio("FILTER RADAR VIEW TARGETS", ["🌐 COMPLETE ANALYSIS MATRIX", "🟢 ACTIVE BUYS", "🔴 RISK EXITS", "📊 HEATMAP GRID"], horizontal=True)
+        
+        if grid_filter == "🟢 ACTIVE BUYS":
+            buys = df_final[df_final["raw_signal"] == "BUY"].drop(columns=["raw_signal", "pct_change", "above_trend"])
+            if not buys.empty: st.dataframe(buys, use_container_width=True, hide_index=True)
+            else: st.info("No tickers match active structural trend buy filters.")
+        elif grid_filter == "🔴 RISK EXITS":
+            sells = df_final[df_final["raw_signal"] == "SELL"].drop(columns=["raw_signal", "pct_change", "above_trend"])
+            if not sells.empty: st.dataframe(sells, use_container_width=True, hide_index=True)
+            else: st.info("No tracking assets currently flag structural exit targets.")
+        elif grid_filter == "🌐 COMPLETE ANALYSIS MATRIX":
+            st.dataframe(df_final.drop(columns=["raw_signal", "pct_change", "above_trend"]), use_container_width=True, hide_index=True)
+        elif grid_filter == "📊 HEATMAP GRID":
+            c_left, c_right = st.columns([2, 1])
+            cached_list = st.session_state.last_scan_data
+            with c_left:
+                h_cols = st.columns(4)
+                for idx, item in enumerate(cached_list[:8]):
+                    target_col = h_cols[idx % 4]
+                    color_hue = "#00e87a" if item["pct_change"] >= 0 else "#ff3355"
+                    bg_hue = "rgba(0, 232, 122, 0.08)" if item["pct_change"] >= 0 else "rgba(255, 51, 85, 0.08)"
+                    target_col.markdown(f"<div style='background:{bg_hue}; border:1px solid {color_hue}44; padding:12px; border-radius:4px; text-align:center; margin-bottom:5px;'><div style='font-weight:700; font-size:12px; color:#fff;'>{item['Ticker']}</div><div style='font-family:\"Space Mono\"; font-size:11px; color:{color_hue}; margin-top:2px;'>{item['pct_change']:+.2f}%</div></div>", unsafe_allow_html=True)
+            with c_right:
+                bulls = sum(1 for x in cached_list if x["above_trend"])
+                score = int((bulls / len(cached_list)) * 100) if cached_list else 50
+                st.markdown(f'<div class="glass-card" style="text-align:center; background:rgba(0,200,255,0.03);"><p class="telemetry-tag" style="font-size:10px; margin:0;">BREADTH SCORE (> 20 SMA)</p><h2 style="color:#00c8ff; font-family:\'Orbitron\'; margin:5px 0; font-size:32px;">{score}%</h2></div>', unsafe_allow_html=True)
+    else:
+        st.info("💡 Radar data streams offline. Click '⚡ EXECUTE MATRIX BULK SCAN' in the sidebar to populate the market grid arrays.")
+
+# ----------------------------------------------------------
+# OTHER ACTIVE SYSTEM WORKSPACES
+# ----------------------------------------------------------
+with backtest_tab:
+    st.markdown("<p class='telemetry-tag' style='color:#00c8ff;'>[ // HISTORICAL STRATEGY SIMULATOR ACTIVE ]</p>", unsafe_allow_html=True)
+with paper_tab:
+    st.markdown("<p class='telemetry-tag' style='color:#00c8ff;'>[ // FORWARD TEST SIMULATION ENVIRONMENT ]</p>", unsafe_allow_html=True)
+with settings_tab:
+    st.text_input("Formula Weight Variable Factor Alpha Core", "20")
+    st.text_input("Formula Weight Variable Factor Beta Vector", "50")
+with help_tab:
+    st.markdown("All indicator processing routines compile utilizing pure localized math streams.")
