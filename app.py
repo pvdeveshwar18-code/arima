@@ -4,8 +4,6 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-from statsmodels.tsa.arima.model import ARIMA
-from statsmodels.tsa.holtwinters import ExponentialSmoothing
 import requests
 
 st.set_page_config(page_title="Indian Stocks Forecast Pro", page_icon="📈", layout="wide")
@@ -61,15 +59,6 @@ button[data-baseweb="tab"][aria-selected="true"] {
 }
 ::-webkit-scrollbar { width: 10px; }
 ::-webkit-scrollbar-thumb { background: #334155; border-radius: 999px; }
-.suggestion-box {
-    background: rgba(15, 23, 42, 0.95);
-    border: 1px solid rgba(255,255,255,0.08);
-    border-radius: 14px;
-    padding: 0.5rem;
-    margin-top: 0.35rem;
-    max-height: 250px;
-    overflow-y: auto;
-}
 .badge {
     display: inline-block;
     padding: 0.22rem 0.55rem;
@@ -143,28 +132,6 @@ if "selected_company" not in st.session_state:
     st.session_state.selected_company = "Tata Consultancy Services"
 if "selected_exchange" not in st.session_state:
     st.session_state.selected_exchange = "NSE"
-if "trigger_analysis" not in st.session_state:
-    st.session_state.trigger_analysis = True
-
-def set_selected(display):
-    row = universe[universe["display"] == display].head(1)
-    if not row.empty:
-        st.session_state.main_ticker = row["ticker"].iloc[0]
-        st.session_state.selected_company = row["company"].iloc[0]
-        st.session_state.selected_exchange = row["exchange"].iloc[0]
-
-def suggestion_matches(query):
-    if universe.empty:
-        return pd.DataFrame(columns=universe.columns)
-    q = (query or "").lower().strip()
-    if not q:
-        return universe.head(8)
-    mask = (
-        universe["company"].astype(str).str.lower().str.contains(q, na=False)
-        | universe["symbol"].astype(str).str.lower().str.contains(q, na=False)
-        | universe["ticker"].astype(str).str.lower().str.contains(q, na=False)
-    )
-    return universe.loc[mask].head(8)
 
 def add_indicators(df):
     out = df.copy()
@@ -197,7 +164,7 @@ def signal_label(df):
 @st.cache_data(ttl=3600)
 def download_stock(ticker, period, interval):
     try:
-        df = yf.download(ticker, period=period, interval=interval, auto_adjust=False, progress=False, show_errors=False)
+        df = yf.download(ticker, period=period, interval=interval, auto_adjust=False, progress=False)
         if df is not None and not df.empty:
             if isinstance(df.columns, pd.MultiIndex):
                 df.columns = [c[0] for c in df.columns]
@@ -215,11 +182,8 @@ with st.sidebar:
     
     st.markdown("---")
     st.header("Parameters")
-    period = st.selectbox("History", ["5y", "3y", "2y", "1y"], index=3) # Set default history closer for faster execution
+    period = st.selectbox("History", ["5y", "3y", "2y", "1y"], index=3)
     interval = st.selectbox("Interval", ["1d", "1wk"], index=0)
-    
-    if app_mode == "🔍 Asset Deep-Dive":
-        forecast_days = st.slider("Forecast horizon (trading days)", 5, 252, 60)
     
     st.markdown("---")
     st.header("⚙️ Strategic Sizing")
@@ -232,54 +196,36 @@ with st.sidebar:
 # VIEW 1: INDIVIDUAL ASSET DEEP DIVE
 # ==========================================================
 if app_mode == "🔍 Asset Deep-Dive":
-    st.markdown("### 🔍 Search Symbol")
-    search_col1, search_col2 = st.columns([0.8, 0.2])
-    with search_col1:
-        search_text = st.text_input("Type company name or exchange symbol", value="", placeholder="🔍 Symbol, company... (e.g. TCS, RELIANCE)", label_visibility="collapsed")
-    with search_col2:
-        run_pressed = st.button("Run Analysis", use_container_width=True)
+    st.markdown("### 🔍 Stock Deep-Dive Panel")
+    selected_display = st.selectbox("Select Asset Focus Universe", options=universe["display"].tolist())
+    
+    if selected_display:
+        row = universe[universe["display"] == selected_display].iloc[0]
+        st.session_state.main_ticker = row["ticker"]
+        st.session_state.selected_company = row["company"]
+        st.session_state.selected_exchange = row["exchange"]
 
-    matches = suggestion_matches(search_text)
-    if search_text.strip() != "" and not matches.empty:
-        st.markdown('<div class="suggestion-box">', unsafe_allow_html=True)
-        for _, row in matches.iterrows():
-            if st.button(row["display"], key=f"sel_{row['ticker']}", use_container_width=True):
-                set_selected(row["display"])
-                st.rerun()
-        st.markdown("</div>", unsafe_allow_html=True)
+    base = download_stock(st.session_state.main_ticker, period, interval)
+    if base.empty:
+        st.error(f"No valid price history fetched for {st.session_state.main_ticker}.")
+    else:
+        base = add_indicators(base)
+        last_close = float(base["Close"].iloc[-1])
+        ytd_return = float((base["Close"].iloc[-1] / base["Close"].iloc[0] - 1) * 100)
+        annual_vol = float(base["Volatility_20"].iloc[-1]) if pd.notna(base["Volatility_20"].iloc[-1]) else 0.0
+        signal = signal_label(base)
+        
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Last Close", f"₹{last_close:,.2f}")
+        c2.metric("Period Return", f"{ytd_return:+.2f}%")
+        c3.metric("Annual Volatility", f"{annual_vol:.2%}")
+        c4.metric("Tactical Bias", signal)
 
-    if run_pressed:
-        raw_text = search_text.strip().upper()
-        if raw_text and not (raw_text.endswith(".NS") or raw_text.endswith(".BO")):
-            st.session_state.main_ticker = f"{raw_text}.NS"
-            st.session_state.selected_company = raw_text
-            st.session_state.selected_exchange = "NSE"
-        st.session_state.trigger_analysis = True
-        st.rerun()
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=base["Date"], y=base["Close"], name="Close Price", line=dict(color="#00d4aa")))
+        fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font=dict(color="#e5e7eb"), height=400)
+        st.plotly_chart(fig, use_container_width=True)
 
-    st.markdown(f"<div style='margin-bottom: 1.5rem;'>Active Asset Focus: <strong>{st.session_state.selected_company}</strong> <span class='badge'>{st.session_state.selected_exchange}</span> <span class='badge'>{st.session_state.main_ticker}</span></div>", unsafe_allow_html=True)
-
-    if st.session_state.trigger_analysis:
-        base = download_stock(st.session_state.main_ticker, period, interval)
-        if base.empty:
-            st.error(f"No valid price history fetched for {st.session_state.main_ticker}.")
-        else:
-            base = add_indicators(base)
-            last_close = float(base["Close"].iloc[-1])
-            ytd_return = float((base["Close"].iloc[-1] / base["Close"].iloc[0] - 1) * 100)
-            annual_vol = float(base["Volatility_20"].iloc[-1]) if pd.notna(base["Volatility_20"].iloc[-1]) else 0.0
-            signal = signal_label(base)
-            
-            c1, c2, c3, c4 = st.columns(4)
-            c1.metric("Last Close", f"₹{last_close:,.2f}", "Live Engine")
-            c2.metric("Period Return", f"{ytd_return:+.2f}%", "Historical Baseline")
-            c3.metric("Annual Volatility", f"{annual_vol:.2%}", "Risk Standard", delta_color="inverse")
-            c4.metric("Tactical Bias", signal, "Quant Rules")
-
-            fig = go.Figure()
-            fig.add_trace(go.Scatter(x=base["Date"], y=base["Close"], name="Close Price", line=dict(color="#00d4aa")))
-            fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font=dict(color="#e5e7eb"), height=400)
-            st.plotly_chart(fig, use_container_width=True)
 
 # ==========================================================
 # VIEW 2: AUTOMATED WHOLE-MARKET BUY RECOMMENDATIONS SCANNER
@@ -288,65 +234,70 @@ elif app_mode == "🎯 Buy Recommendations Scanner":
     st.markdown("### ⚡ Full National Stock Exchange (NSE) Scanner Engine")
     st.markdown(f"Total traceable securities indexed: **{len(universe)} listed listings**.")
     
-    scan_limit = st.number_input("Scan Limit (Limit list size to prevent timeout spikes)", min_value=10, max_value=3000, value=250, step=50)
+    scan_limit = st.number_input("Scan Limit (Adjust list size to prevent timeout spikes)", min_value=10, max_value=3000, value=150, step=50)
     
     if st.button("🚀 Execute Broad Market Scan", use_container_width=True):
-        tickers_to_scan = universe["ticker"].head(scan_limit).tolist()
+        tickers_to_scan = universe["ticker"].head(int(scan_limit)).tolist()
         
-        st.info("Downloading historical multi-matrix frames in vectorized layout chunks...")
+        st.info("Downloading historical data frames in vectorized layout chunks...")
         
         try:
-            # Vectorized multi-download architecture prevents slow step loops
-            raw_data = yf.download(tickers_to_scan, period="6mo", interval=interval, group_by='ticker', auto_adjust=False, progress=False, show_errors=False)
+            # Removed unexpected show_errors arg to ensure yfinance compatibility
+            raw_data = yf.download(tickers_to_scan, period="6mo", interval=interval, group_by='ticker', auto_adjust=False, progress=False)
             
             results = []
             for ticker in tickers_to_scan:
                 try:
-                    if ticker in raw_data.columns.levels[0]:
+                    # Check safe execution regardless of multi-index return structural variants
+                    if isinstance(raw_data.columns, pd.MultiIndex):
+                        if ticker not in raw_data.columns.levels[0]: continue
                         df_ticker = raw_data[ticker].dropna(subset=["Close"]).reset_index()
-                        if len(df_ticker) < 30: continue
-                        
-                        df_calc = add_indicators(df_ticker)
-                        last_row = df_calc.iloc[-1]
-                        bias = signal_label(df_calc)
-                        
-                        current_price = float(last_row["Close"])
-                        atr = last_row["ATR_14"] if pd.notna(last_row["ATR_14"]) else (current_price * 0.02)
-                        sl_dist = atr * 1.5
-                        sl_price = current_price - sl_dist
-                        tp_price = current_price + (sl_dist * risk_reward_ratio)
-                        
-                        rupees_at_risk = allocated_capital * (risk_per_trade / 100.0)
-                        shares_to_buy = int(rupees_at_risk // sl_dist) if sl_dist > 0 else 0
-                        
-                        results.append({
-                            "Ticker Symbol": ticker.replace(".NS", ""),
-                            "Current Price": f"₹{current_price:,.2f}",
-                            "RSI (14)": f"{last_row['RSI_14']:.1f}",
-                            "Technical Recommendation": bias,
-                            "Suggested Sizing": f"{shares_to_buy} Units",
-                            "Calculated Stop-Loss": f"₹{sl_price:,.2f}",
-                            "Profit Target": f"₹{tp_price:,.2f}"
-                        })
+                    else:
+                        df_ticker = raw_data.dropna(subset=["Close"]).reset_index()
+                    
+                    if len(df_ticker) < 30: continue
+                    
+                    df_calc = add_indicators(df_ticker)
+                    last_row = df_calc.iloc[-1]
+                    bias = signal_label(df_calc)
+                    
+                    current_price = float(last_row["Close"])
+                    atr = last_row["ATR_14"] if pd.notna(last_row["ATR_14"]) else (current_price * 0.02)
+                    sl_dist = atr * 1.5
+                    sl_price = current_price - sl_dist
+                    tp_price = current_price + (sl_dist * risk_reward_ratio)
+                    
+                    rupees_at_risk = allocated_capital * (risk_per_trade / 100.0)
+                    shares_to_buy = int(rupees_at_risk // sl_dist) if sl_dist > 0 else 0
+                    
+                    results.append({
+                        "Ticker": ticker.replace(".NS", ""),
+                        "Price": f"₹{current_price:,.2f}",
+                        "RSI (14)": f"{last_row['RSI_14']:.1f}",
+                        "Recommendation": bias,
+                        "Sizing Target": f"{shares_to_buy} Units",
+                        "Stop-Loss": f"₹{sl_price:,.2f}",
+                        "Target Profit": f"₹{tp_price:,.2f}"
+                    })
                 except:
                     continue
             
             if results:
                 df_scan = pd.DataFrame(results)
-                buys_only = df_scan[df_scan["Technical Recommendation"] == "Buy"]
-                exits_only = df_scan[df_scan["Technical Recommendation"] == "Exit"]
+                buys_only = df_scan[df_scan["Recommendation"] == "Buy"]
+                exits_only = df_scan[df_scan["Recommendation"] == "Exit"]
                 
                 t_buy, t_exit, t_all = st.tabs([f"🟢 Active Buys ({len(buys_only)})", f"🔴 Active Exits ({len(exits_only)})", "🌐 Scanned Tracker Matrix"])
                 
                 with t_buy:
                     if not buys_only.empty: st.dataframe(buys_only, use_container_width=True, hide_index=True)
-                    else: st.info("No active crossover buy setups matched across current segment list.")
+                    else: st.info("No active buy signals found within this selection.")
                 with t_exit:
                     if not exits_only.empty: st.dataframe(exits_only, use_container_width=True, hide_index=True)
                     else: st.info("No structural exit signals flagged.")
                 with t_all:
                     st.dataframe(df_scan, use_container_width=True, hide_index=True)
             else:
-                st.error("Could not construct matrix. Try shrinking the timeframe data window depth.")
+                st.error("No valid asset calculations could be extracted.")
         except Exception as e:
-            st.error(f"Vector calculation error: {str(e)}")
+            st.error(f"Vector engine execution failure: {str(e)}")
