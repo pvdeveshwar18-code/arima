@@ -3,6 +3,7 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 from statsmodels.tsa.arima.model import ARIMA
 from statsmodels.tsa.holtwinters import ExponentialSmoothing
 from sklearn.metrics import mean_absolute_error, mean_squared_error
@@ -93,7 +94,7 @@ st.markdown(
         Indian Stocks Forecast Pro
     </h1>
     <p style="margin:0.25rem 0 0 0; color: rgba(229,231,235,.65); font-size: 0.95rem;">
-        Forecasts, indicators, backtesting, market structure, and swing-trade context
+        Forecasts, indicators, backtesting, market structure, risk mitigation metrics, and core fundamentals.
     </p>
 </div>
 """,
@@ -103,10 +104,8 @@ st.markdown(
 @st.cache_data(ttl=24 * 60 * 60)
 def load_stock_universe():
     frames = []
-    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
-    
+    headers = {"User-Agent": "Mozilla/5.0"}
     try:
-        # High-availability mirror repository for complete Nifty list
         res = requests.get("https://raw.githubusercontent.com/anirbanghoshsbi/NSE-LIST/master/NSE_EQUITIES_LIST.csv", headers=headers, timeout=5)
         if res.status_code == 200:
             from io import StringIO
@@ -125,12 +124,11 @@ def load_stock_universe():
         pass
 
     if not frames:
-        # Extended high-fidelity fallback list of top NSE market drivers
         fallback_data = {
-            "company": ["Reliance Industries Ltd", "Tata Consultancy Services", "HDFC Bank Ltd", "Infosys Ltd", "State Bank of India", "ICICI Bank Ltd", "ITC Ltd", "Larsen & Toubro Ltd", "Bharti Airtel Ltd", "Hindustan Unilever Ltd", "Tata Motors Ltd", "Zomato Ltd", "Adani Enterprises", "Bajaj Finance", "Mahindra & Mahindra"],
-            "symbol": ["RELIANCE", "TCS", "HDFCBANK", "INFY", "SBIN", "ICICIBANK", "ITC", "LT", "BHARTIARTL", "HINDUNILVR", "TATAMOTORS", "ZOMATO", "ADANIENT", "BAJFINANCE", "M&M"],
-            "ticker": ["RELIANCE.NS", "TCS.NS", "HDFCBANK.NS", "INFY.NS", "SBIN.NS", "ICICIBANK.NS", "ITC.NS", "LT.NS", "BHARTIARTL.NS", "HINDUNILVR.NS", "TATAMOTORS.NS", "ZOMATO.NS", "ADANIENT.NS", "BAJFINANCE.NS", "M&M.NS"],
-            "exchange": ["NSE"] * 15
+            "company": ["Reliance Industries Ltd", "Tata Consultancy Services", "HDFC Bank Ltd", "Infosys Ltd", "State Bank of India", "ICICI Bank Ltd", "ITC Ltd", "Larsen & Toubro Ltd", "Bharti Airtel Ltd", "Hindustan Unilever Ltd", "Tata Motors Ltd", "Zomato Ltd", "Swiggy Ltd"],
+            "symbol": ["RELIANCE", "TCS", "HDFCBANK", "INFY", "SBIN", "ICICIBANK", "ITC", "LT", "BHARTIARTL", "HINDUNILVR", "TATAMOTORS", "ZOMATO", "SWIGGY"],
+            "ticker": ["RELIANCE.NS", "TCS.NS", "HDFCBANK.NS", "INFY.NS", "SBIN.NS", "ICICIBANK.NS", "ITC.NS", "LT.NS", "BHARTIARTL.NS", "HINDUNILVR.NS", "TATAMOTORS.NS", "ZOMATO.NS", "SWIGGY.NS"],
+            "exchange": ["NSE"] * 13
         }
         frames.append(pd.DataFrame(fallback_data))
 
@@ -171,14 +169,9 @@ def suggestion_matches(query):
 
 with st.sidebar:
     st.header("Search Stock")
-    search_text = st.text_input(
-        "Type company name or symbol",
-        value="",
-        placeholder="e.g. Reliance, TCS, SBIN",
-    )
+    search_text = st.text_input("Type company name or symbol", value="", placeholder="e.g. Swiggy, Reliance, TCS")
 
     matches = suggestion_matches(search_text)
-    
     if search_text.strip() != "" and not matches.empty:
         st.markdown('<div class="suggestion-box">', unsafe_allow_html=True)
         for _, row in matches.iterrows():
@@ -187,7 +180,7 @@ with st.sidebar:
                 st.rerun()
         st.markdown("</div>", unsafe_allow_html=True)
     elif search_text.strip() != "":
-        st.caption("✨ Custom Ticker detected. Press 'Run Analysis' to look it up directly across all Indian exchanges.")
+        st.caption("✨ Custom Ticker detected. Press 'Run Analysis' to process across Indian markets.")
 
     cleaned_input = search_text.strip().upper()
     if cleaned_input.endswith(".NS") or cleaned_input.endswith(".BO"):
@@ -205,10 +198,14 @@ with st.sidebar:
     period = st.selectbox("History", ["5y", "3y", "2y", "1y"], index=0)
     interval = st.selectbox("Interval", ["1d", "1wk"], index=0)
     forecast_days = st.slider("Forecast horizon (trading days)", 5, 252, 60)
-    use_case = st.radio("Use case", ["Swing trade", "Long term"])
+    
+    st.markdown("---")
+    st.markdown("⚙️ **Advanced Strategic Parameters**")
+    allocated_capital = st.number_input("Total Trade Capital (₹)", min_value=1000, value=100000, step=5000)
+    risk_per_trade = st.slider("Max Capital Risk Per Trade (%)", 0.5, 5.0, 1.5, step=0.1)
+    
     backtest_split = st.slider("Backtest split (%)", 60, 90, 80)
     show_raw = st.checkbox("Show raw data", value=False)
-    compare_all = st.checkbox("Compare selected tickers", value=True)
     
     if st.button("Run Analysis", use_container_width=True):
         raw_text = search_text.strip().upper()
@@ -240,12 +237,26 @@ def download_stock(ticker, period, interval):
         pass
     return pd.DataFrame()
 
+@st.cache_data(ttl=86400)
+def fetch_fundamentals(ticker):
+    try:
+        t = yf.Ticker(ticker)
+        inf = t.info
+        return {
+            "pe": inf.get("trailingPE", np.nan),
+            "pb": inf.get("priceToBook", np.nan),
+            "beta": inf.get("beta", np.nan),
+            "cap": inf.get("marketCap", np.nan),
+            "summary": inf.get("longBusinessSummary", "No corporate profile summary indexed summary available.")
+        }
+    except:
+        return {"pe": np.nan, "pb": np.nan, "beta": np.nan, "cap": np.nan, "summary": "No fundamental metrics resolved."}
+
 def add_indicators(df):
     out = df.copy()
     out["Return"] = out["Close"].pct_change()
     out["SMA_20"] = out["Close"].rolling(20).mean()
     out["SMA_50"] = out["Close"].rolling(50).mean()
-    out["EMA_20"] = out["Close"].ewm(span=20, adjust=False).mean()
     out["Volatility_20"] = out["Return"].rolling(20).std() * np.sqrt(252)
     
     delta = out["Close"].diff()
@@ -254,16 +265,10 @@ def add_indicators(df):
     rs = gain / (loss + 1e-9)
     out["RSI_14"] = 100 - (100 / (1 + rs))
     
-    out["ATR_14"] = (out["High"] - out["Low"]).rolling(14).mean() if {"High", "Low"}.issubset(out.columns) else np.nan
-    ema12 = out["Close"].ewm(span=12, adjust=False).mean()
-    ema26 = out["Close"].ewm(span=26, adjust=False).mean()
-    out["MACD"] = ema12 - ema26
-    out["MACD_Signal"] = out["MACD"].ewm(span=9, adjust=False).mean()
-    out["MACD_Hist"] = out["MACD"] - out["MACD_Signal"]
+    out["ATR_14"] = (out["High"] - out["Low"]).rolling(14).mean() if {"High", "Low"}.issubset(out.columns) else out["Close"].rolling(14).std()
     
     m = out["Close"].rolling(20).mean()
     s = out["Close"].rolling(20).std()
-    out["BB_Mid"] = m
     out["BB_Upper"] = m + 2 * s
     out["BB_Lower"] = m - 2 * s
     return out
@@ -279,46 +284,36 @@ def signal_label(df):
         return "Exit"
     return "Hold"
 
-def sentiment_label(df):
-    if len(df) < 2: return "Neutral"
-    last = df.iloc[-1]
-    score = 0
-    if pd.notna(last["SMA_20"]) and pd.notna(last["SMA_50"]) and last["SMA_20"] > last["SMA_50"]:
-        score += 1
-    if pd.notna(last["RSI_14"]) and last["RSI_14"] < 60:
-        score += 1
-    if pd.notna(last["Volatility_20"]) and last["Volatility_20"] < 0.35:
-        score += 1
-    return "Positive" if score >= 2 else ("Neutral" if score == 1 else "Weak")
-
 def backtest_crossover(df):
     d = df.dropna(subset=["SMA_20", "SMA_50"]).copy()
     if d.empty:
-        return df.copy(), 0, 0, 0, 0, 0
+        return df.copy(), 0, 0, 0, 0
     d["Signal"] = 0
     d.loc[d["SMA_20"] > d["SMA_50"], "Signal"] = 1
     d["Position"] = d["Signal"].diff().fillna(0)
     d["Strategy_Return"] = d["Return"] * d["Signal"].shift(1).fillna(0)
     d["Equity"] = (1 + d["Strategy_Return"].fillna(0)).cumprod()
     d["BuyHold"] = (1 + d["Return"].fillna(0)).cumprod()
+    
+    # Calculate Max Drawdown
+    cum_max = d["Equity"].cummax()
+    d["Drawdown"] = (d["Equity"] - cum_max) / cum_max
+    max_dd = float(d["Drawdown"].min())
+    
     total_return = d["Equity"].iloc[-1] - 1 if len(d) > 0 else 0
     bh_return = d["BuyHold"].iloc[-1] - 1 if len(d) > 0 else 0
     trades = int((d["Position"] == 1).sum())
-    win_days = int((d["Strategy_Return"] > 0).sum())
-    loss_days = int((d["Strategy_Return"] < 0).sum())
-    return d, total_return, bh_return, trades, win_days, loss_days
+    return d, total_return, bh_return, trades, max_dd
 
 def forecast_arima(series, steps):
     clean = series.dropna()
-    if len(clean) < 30: return None, None
+    if len(clean) < 30: return None
     for order in [(1, 1, 1), (2, 1, 0)]:
         try:
             model = ARIMA(clean, order=order).fit()
-            fc = model.get_forecast(steps=steps)
-            return fc.predicted_mean, fc.conf_int()
-        except:
-            continue
-    return None, None
+            return model.get_forecast(steps=steps).predicted_mean
+        except: continue
+    return None
 
 def forecast_ets(series, steps):
     clean = series.dropna()
@@ -326,70 +321,15 @@ def forecast_ets(series, steps):
     try:
         model = ExponentialSmoothing(clean, trend="add", seasonal=None).fit(optimized=True)
         return model.forecast(steps)
-    except:
-        return None
+    except: return None
 
-def forecast_metrics(actual, pred):
-    n = min(len(actual), len(pred))
-    if n < 2: return 0, 0, 0
-    a = actual[-n:]
-    p = pred[-n:]
-    mae = mean_absolute_error(a, p)
-    rmse = sqrt(mean_squared_error(a, p))
-    mape = np.mean(np.abs((a - p) / np.where(a == 0, np.nan, a))) * 100
-    return mae, rmse, mape
-
-def anchored_vwap(df, anchor_idx=None):
-    d = df.copy()
-    if anchor_idx is None:
-        anchor_idx = max(0, len(d) - 60)
-    d = d.iloc[anchor_idx:].copy()
-    if d.empty or "Volume" not in d.columns or d["Volume"].sum() == 0:
-        return pd.Series(dtype=float)
-    typical = (d["High"] + d["Low"] + d["Close"]) / 3
-    avwap = (typical * d["Volume"]).cumsum() / d["Volume"].cumsum()
-    avwap.index = d["Date"]
-    return avwap
-
-def volume_profile(df, bins=20):
-    d = df.copy()
-    if d.empty or "Volume" not in d.columns or d["Volume"].sum() == 0:
-        return pd.DataFrame()
-    p_min, p_max = float(d["Low"].min()), float(d["High"].max())
-    if p_max <= p_min: return pd.DataFrame()
-    edges = np.linspace(p_min, p_max, bins + 1)
-    centers = (edges[:-1] + edges[1:]) / 2
-    bucket = pd.cut(d["Close"], bins=edges, include_lowest=True, labels=False)
-    vol = d.groupby(bucket, observed=False)["Volume"].sum().reindex(range(bins), fill_value=0).values
-    vp = pd.DataFrame({"price": centers, "volume": vol})
-    poc = vp.loc[vp["volume"].idxmax(), "price"] if not vp.empty else np.nan
-    return vp.assign(POC=poc, VAH=p_max * 0.95, VAL=p_min * 1.05)
-
-def liquidity_sweep(df, lookback=20):
-    d = df.copy()
-    if len(d) < lookback + 2: return "None", None
-    recent = d.iloc[-lookback - 1 : -1]
-    last = d.iloc[-1]
-    prev_high, prev_low = recent["High"].max(), recent["Low"].min()
-    if last["Low"] < prev_low and last["Close"] > prev_low:
-        return "Bullish Sweep", float(prev_low)
-    if last["High"] > prev_high and last["Close"] < prev_high:
-        return "Bearish Sweep", float(prev_high)
-    return "None", None
-
-def amd_state(df):
-    if len(df) < 20: return "Unknown"
-    trend = df["Close"].iloc[-1] - df["Close"].iloc[-15]
-    return "Distribution" if trend > 0 else "Accumulation"
-
-
-# Main Core Framework Execution
 if st.session_state.trigger_analysis:
     main_ticker = st.session_state.main_ticker
     base = download_stock(main_ticker, period, interval)
+    f_metrics = fetch_fundamentals(main_ticker)
     
     if base.empty:
-        st.error(f"No valid price history fetched for {main_ticker}. Verify that the symbol is correct and listed on Yahoo Finance.")
+        st.error(f"No valid price history fetched for {main_ticker}. Verify symbol parameter accuracy.")
     else:
         base = add_indicators(base)
         last_close = float(base["Close"].iloc[-1])
@@ -397,144 +337,139 @@ if st.session_state.trigger_analysis:
         annual_vol = float(base["Volatility_20"].iloc[-1]) if pd.notna(base["Volatility_20"].iloc[-1]) else 0.0
         
         signal = signal_label(base)
-        sentiment = sentiment_label(base)
-        backtested, strat_ret, bh_ret, trades, win_days, loss_days = backtest_crossover(base)
+        backtested, strat_ret, bh_ret, trades, max_dd = backtest_crossover(base)
         
         steps = forecast_days if interval == "1d" else max(4, forecast_days // 5)
-        arima_pred, arima_ci = forecast_arima(base["Close"], steps)
+        arima_pred = forecast_arima(base["Close"], steps)
         ets_pred = forecast_ets(base["Close"], steps)
-        
-        split_idx = int(len(base) * backtest_split / 100)
-        mae, rmse, mape = 0, 0, 0
-        if split_idx > 15:
-            try:
-                eval_model = ARIMA(base["Close"].iloc[:split_idx].dropna(), order=(1,1,1)).fit()
-                eval_fc = eval_model.get_forecast(steps=len(base) - split_idx)
-                mae, rmse, mape = forecast_metrics(base["Close"].iloc[split_idx:].values, eval_fc.predicted_mean.values)
-            except: pass
 
-        # Native Streamlit KPI Grid Board - Eliminates layout crash bugs
+        # Primary Core Metric Dashboard Rows
         c1, c2, c3, c4 = st.columns(4)
         with c1:
             with st.container(border=True):
-                st.metric(label="Last Close", value=f"₹{last_close:,.2f}", delta="Live Feed")
+                st.metric(label="Last Close", value=f"₹{last_close:,.2f}", delta="Live Feed Engine")
         with c2:
             with st.container(border=True):
-                st.metric(label="Period Return", value=f"{ytd_return:+.2f}%", delta="Performance")
+                st.metric(label="Period Return", value=f"{ytd_return:+.2f}%", delta="Historical Baseline")
         with c3:
             with st.container(border=True):
-                st.metric(label="Annual Volatility", value=f"{annual_vol:.2%}", delta="Risk Vector", delta_color="inverse")
+                st.metric(label="Annual Volatility", value=f"{annual_vol:.2%}", delta="Risk Standard", delta_color="inverse")
         with c4:
             with st.container(border=True):
-                st.metric(label="Tactical Bias", value=signal, delta="Quant Signal")
+                st.metric(label="Tactical Bias", value=signal, delta="Quant Crossover Rules")
 
         st.markdown("<div style='margin-top: 1.5rem;'></div>", unsafe_allow_html=True)
 
-        # Navigation Tabs
-        t1, t2, t3, t4, t5 = st.tabs([
-            "📊 Core Analytics", 
+        # Navigation Pipeline Tabs
+        t1, t2, t3, t4 = st.tabs([
+            "📊 Advanced Analytics", 
             "🤖 Predictive Intelligence", 
-            "🧪 Strategy Validation", 
-            "🌐 Market Universe", 
-            "🧬 Order Flow Architecture"
+            "🧪 Strategy & Risk Sizing", 
+            "🧬 Fundamental Profile"
         ])
 
         with t1:
-            st.markdown("<h4 style='color:#38bdf8; font-weight:700; margin-bottom:1rem;'>Price Action & Moving Averages</h4>", unsafe_allow_html=True)
-            fig = go.Figure()
-            fig.add_trace(go.Scatter(x=base["Date"], y=base["Close"], name="Close Price", line=dict(color="#00d4aa", width=2)))
-            fig.add_trace(go.Scatter(x=base["Date"], y=base["SMA_20"], name="Fast (SMA 20)", line=dict(color="#38bdf8", width=1.5, dash="dash")))
-            fig.add_trace(go.Scatter(x=base["Date"], y=base["SMA_50"], name="Slow (SMA 50)", line=dict(color="#a78bfa", width=1.5)))
+            st.markdown("<h4 style='color:#38bdf8; font-weight:700;'>Price Action & Momentum Overlays</h4>", unsafe_allow_html=True)
+            show_bb = st.checkbox("Overlay Bollinger Volatility Bands (20, 2)", value=True)
+            
+            # Subplot Configuration: Panel 1 = Price/MA, Panel 2 = RSI Matrix
+            fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.08, row_heights=[0.7, 0.3])
+            
+            fig.add_trace(go.Scatter(x=base["Date"], y=base["Close"], name="Close Price", line=dict(color="#00d4aa", width=2)), row=1, col=1)
+            fig.add_trace(go.Scatter(x=base["Date"], y=base["SMA_20"], name="Fast (SMA 20)", line=dict(color="#38bdf8", width=1.5, dash="dash")), row=1, col=1)
+            fig.add_trace(go.Scatter(x=base["Date"], y=base["SMA_50"], name="Slow (SMA 50)", line=dict(color="#a78bfa", width=1.5)), row=1, col=1)
+            
+            if show_bb and "BB_Upper" in base.columns:
+                fig.add_trace(go.Scatter(x=base["Date"], y=base["BB_Upper"], name="BB Upper Band", line=dict(color="rgba(239,68,68,0.35)", width=1)), row=1, col=1)
+                fig.add_trace(go.Scatter(x=base["Date"], y=base["BB_Lower"], name="BB Lower Band", line=dict(color="rgba(239,68,68,0.35)", width=1), fill='tonexty'), row=1, col=1)
+
+            # RSI Lower Subplot
+            fig.add_trace(go.Scatter(x=base["Date"], y=base["RSI_14"], name="RSI (14)", line=dict(color="#fbbf24", width=1.5)), row=2, col=1)
+            fig.add_shape(type="line", x0=base["Date"].iloc[0], x1=base["Date"].iloc[-1], y0=70, y1=70, line=dict(color="rgba(239,68,68,0.5)", dash="dot"), row=2, col=1)
+            fig.add_shape(type="line", x0=base["Date"].iloc[0], x1=base["Date"].iloc[-1], y0=30, y1=30, line=dict(color="rgba(34,197,94,0.5)", dash="dot"), row=2, col=1)
             
             fig.update_layout(
-                paper_bgcolor="rgba(0,0,0,0)",
-                plot_bgcolor="rgba(0,0,0,0)",
-                font=dict(color="#e5e7eb", family="Inter"),
-                hovermode="x unified",
-                margin=dict(l=10, r=10, t=10, b=10),
-                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-                xaxis=dict(gridcolor="rgba(255,255,255,0.05)", zeroline=False),
-                yaxis=dict(gridcolor="rgba(255,255,255,0.05)", zeroline=False, side="right")
+                paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                font=dict(color="#e5e7eb", family="Inter"), hovermode="x unified",
+                margin=dict(l=10, r=10, t=10, b=10), height=550,
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
             )
-            st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
+            fig.update_yaxes(gridcolor="rgba(255,255,255,0.05)", side="right", row=1, col=1)
+            fig.update_yaxes(gridcolor="rgba(255,255,255,0.05)", side="right", range=[10, 90], row=2, col=1)
+            fig.update_xaxes(gridcolor="rgba(255,255,255,0.05)")
             
-            if show_raw:
-                st.markdown("<br>", unsafe_allow_html=True)
-                st.dataframe(base.tail(30), use_container_width=True)
+            st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
 
         with t2:
-            st.markdown("<h4 style='color:#38bdf8; font-weight:700; margin-bottom:1rem;'>Statistical & Horizon Projections</h4>", unsafe_allow_html=True)
+            st.markdown("<h4 style='color:#38bdf8; font-weight:700;'>Statistical Projections Spectrum</h4>", unsafe_allow_html=True)
             fc_idx = pd.bdate_range(base["Date"].iloc[-1] + pd.Timedelta(days=1), periods=steps)
-            forecast_df = pd.DataFrame(index=fc_idx)
             
             fig_fc = go.Figure()
             fig_fc.add_trace(go.Scatter(x=base["Date"].tail(90), y=base["Close"].tail(90), name="Historical Anchor", line=dict(color="#64748b", width=2)))
             
             if arima_pred is not None:
-                forecast_df["ARIMA"] = arima_pred.values
-                fig_fc.add_trace(go.Scatter(x=fc_idx, y=forecast_df["ARIMA"], name="ARIMA ML Engine", line=dict(color="#ef4444", width=2.5)))
+                fig_fc.add_trace(go.Scatter(x=fc_idx, y=arima_pred.values, name="ARIMA Regression ML", line=dict(color="#ef4444", width=2.5)))
             if ets_pred is not None:
-                forecast_df["ETS"] = ets_pred.values
-                fig_fc.add_trace(go.Scatter(x=fc_idx, y=forecast_df["ETS"], name="Smoothing State Matrix", line=dict(color="#00d4aa", width=2.5, dash="dot")))
+                fig_fc.add_trace(go.Scatter(x=fc_idx, y=ets_pred.values, name="ETS Exponential Smooth Matrix", line=dict(color="#00d4aa", width=2.5, dash="dot")))
                 
             fig_fc.update_layout(
-                paper_bgcolor="rgba(0,0,0,0)",
-                plot_bgcolor="rgba(0,0,0,0)",
-                font=dict(color="#e5e7eb", family="Inter"),
-                hovermode="x unified",
+                paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                font=dict(color="#e5e7eb", family="Inter"), hovermode="x unified",
                 margin=dict(l=10, r=10, t=10, b=10),
-                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-                xaxis=dict(gridcolor="rgba(255,255,255,0.05)"),
-                yaxis=dict(gridcolor="rgba(255,255,255,0.05)", side="right")
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
             )
+            fig_fc.update_yaxes(gridcolor="rgba(255,255,255,0.05)", side="right")
+            fig_fc.update_xaxes(gridcolor="rgba(255,255,255,0.05)")
             st.plotly_chart(fig_fc, use_container_width=True, config={'displayModeBar': False})
-            st.info(f"📊 **Holdout Verification Metrics:** Mean Absolute Error (MAE): `{mae:.2f}` | Root RMSE: `{rmse:.2f}` | MAPE Variance: `{mape:.2f}%`")
 
         with t3:
-            st.markdown("<h4 style='color:#38bdf8; font-weight:700; margin-bottom:1rem;'>Crossover Backtest Validation</h4>", unsafe_allow_html=True)
-            st.write(f"Strategy Cumulative Performance: **{strat_ret:.2%}** vs Bench Buy & Hold: **{bh_ret:.2%}**")
+            st.markdown("<h4 style='color:#38bdf8; font-weight:700;'>Strategy Optimization & Position Risk Sizer</h4>", unsafe_allow_html=True)
+            
+            # Position Sizing Logic Calculations
+            current_atr = base["ATR_14"].iloc[-1] if pd.notna(base["ATR_14"].iloc[-1]) else (last_close * 0.02)
+            allowed_rupees_at_risk = allocated_capital * (risk_per_trade / 100.0)
+            stop_loss_distance = current_atr * 1.5
+            
+            if stop_loss_distance > 0:
+                recommended_shares = int(allowed_rupees_at_risk // stop_loss_distance)
+            else:
+                recommended_shares = 0
+                
+            rc1, rc2, rc3 = st.columns(3)
+            with rc1:
+                st.metric("Strategy Historical Return", f"{strat_ret:.2%}", delta=f"vs Bench {bh_ret:.2%}")
+            with rc2:
+                st.metric("Maximum Backtest Drawdown", f"{max_dd:.2%}", delta="Peak-to-Trough Pain Factor", delta_color="inverse")
+            with rc3:
+                st.metric("Recommended Share Execution Size", f"{recommended_shares} Units", f"Risk Target: ₹{allowed_rupees_at_risk:,.2f}")
+                
+            st.caption(f"ℹ️ **Position Sizing Engine Logic:** Risking {risk_per_trade}% of total capital with a technical Stop-Loss placed 1.5x ATR below your execution point.")
+            
             fig_bt = go.Figure()
-            fig_bt.add_trace(go.Scatter(x=backtested["Date"], y=backtested["Equity"], name="Strategy Returns", line=dict(color="#00d4aa", width=2)))
-            fig_bt.add_trace(go.Scatter(x=backtested["Date"], y=backtested["BuyHold"], name="Bench Buy & Hold", line=dict(color="#38bdf8", dash="dash")))
+            fig_bt.add_trace(go.Scatter(x=backtested["Date"], y=backtested["Equity"], name="Strategy Momentum Equity Curve", line=dict(color="#00d4aa", width=2)))
+            fig_bt.add_trace(go.Scatter(x=backtested["Date"], y=backtested["BuyHold"], name="Benchmark Buy & Hold Track", line=dict(color="#38bdf8", dash="dash")))
             fig_bt.update_layout(
-                paper_bgcolor="rgba(0,0,0,0)",
-                plot_bgcolor="rgba(0,0,0,0)",
-                font=dict(color="#e5e7eb", family="Inter"),
-                margin=dict(l=10, r=10, t=10, b=10),
-                xaxis=dict(gridcolor="rgba(255,255,255,0.05)"),
-                yaxis=dict(gridcolor="rgba(255,255,255,0.05)", side="right")
+                paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                font=dict(color="#e5e7eb", family="Inter"), margin=dict(l=10, r=10, t=10, b=10)
             )
+            fig_bt.update_yaxes(gridcolor="rgba(255,255,255,0.05)", side="right")
             st.plotly_chart(fig_bt, use_container_width=True, config={'displayModeBar': False})
 
         with t4:
-            st.markdown("<h4 style='color:#38bdf8; font-weight:700; margin-bottom:1rem;'>Universe Snapshot</h4>", unsafe_allow_html=True)
-            st.write("Cross-comparison tracking index pool:")
-            st.dataframe(universe, use_container_width=True)
-
-        with t5:
-            st.markdown("<h4 style='color:#38bdf8; font-weight:700; margin-bottom:1rem;'>Order Flow & Liquidity Distribution</h4>", unsafe_allow_html=True)
-            avwap_series = anchored_vwap(base)
-            vp_df = volume_profile(base)
-            sweep_txt, _ = liquidity_sweep(base)
-            amd_lbl = amd_state(base)
+            st.markdown("<h4 style='color:#38bdf8; font-weight:700;'>Corporate Fundamental Snapshot</h4>", unsafe_allow_html=True)
             
-            m1, m2, m3 = st.columns(3)
-            m1.metric("Structural Range State", amd_lbl)
-            m2.metric("Liquidity Dynamics", sweep_txt)
-            m3.metric("Sampled Profile Blocks", len(vp_df))
-
-            fig_ms = go.Figure()
-            fig_ms.add_trace(go.Scatter(x=base["Date"], y=base["Close"], name="Underlying Close", line=dict(color="#60a5fa")))
-            if not avwap_series.empty:
-                fig_ms.add_trace(go.Scatter(x=avwap_series.index, y=avwap_series.values, name="Anchored VWAP", line=dict(color="#a78bfa", width=2)))
-            fig_ms.update_layout(
-                paper_bgcolor="rgba(0,0,0,0)",
-                plot_bgcolor="rgba(0,0,0,0)",
-                font=dict(color="#e5e7eb", family="Inter"),
-                margin=dict(l=10, r=10, t=10, b=10),
-                xaxis=dict(gridcolor="rgba(255,255,255,0.05)"),
-                yaxis=dict(gridcolor="rgba(255,255,255,0.05)", side="right")
-            )
-            st.plotly_chart(fig_ms, use_container_width=True, config={'displayModeBar': False})
+            fc1, fc2, fc3 = st.columns(3)
+            with fc1:
+                st.metric("Trailing P/E Ratio", f"{f_metrics['pe']:.2f}" if pd.notna(f_metrics['pe']) else "N/A")
+            with fc2:
+                st.metric("Price-to-Book (P/B)", f"{f_metrics['pb']:.2f}" if pd.notna(f_metrics['pb']) else "N/A")
+            with fc3:
+                st.metric("Historical Asset Beta", f"{f_metrics['beta']:.2f}" if pd.notna(f_metrics['beta']) else "N/A")
+                
+            st.markdown(f"**Corporate Background Summary Profile:**\n\n>{f_metrics['summary']}")
+            
+            if show_raw:
+                st.markdown("---")
+                st.dataframe(base.tail(30), use_container_width=True)
 else:
-    st.info("👈 Set parameters inside the left control panel and select 'Run Analysis' to process computational indicators.")
+    st.info("👈 Set system variables inside the panel matrix settings on the left sidebar and select 'Run Analysis'.")
