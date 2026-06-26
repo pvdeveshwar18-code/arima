@@ -424,4 +424,63 @@ if st.session_state.trigger_analysis:
             st.plotly_chart(fig_fc, use_container_width=True, config={'displayModeBar': False})
 
         with t3:
-            st.markdown("<h4
+            st.markdown("<h4 style='color:#38bdf8; font-weight:700;'>Strategy Optimization & Execution Targets</h4>", unsafe_allow_html=True)
+            
+            current_atr = base["ATR_14"].iloc[-1] if pd.notna(base["ATR_14"].iloc[-1]) else (last_close * 0.02)
+            allowed_rupees_at_risk = allocated_capital * (risk_per_trade / 100.0)
+            
+            stop_loss_distance = current_atr * 1.5
+            recommended_shares = int(allowed_rupees_at_risk // stop_loss_distance) if stop_loss_distance > 0 else 0
+            
+            stop_loss_price = last_close - stop_loss_distance
+            target_profit_price = last_close + (stop_loss_distance * risk_reward_ratio)
+            
+            rc1, rc2, rc3 = st.columns(3)
+            with rc1:
+                st.metric("Strategy Historical Return", f"{strat_ret:.2%}", delta=f"vs Bench {bh_ret:.2%}")
+            with rc2:
+                st.metric("Maximum Backtest Drawdown", f"{max_dd:.2%}", delta="Peak-to-Trough Pain", delta_color="inverse")
+            with rc3:
+                st.metric("Position Allocation", f"{recommended_shares} Units", f"Risk Budget: ₹{allowed_rupees_at_risk:,.2f}")
+                
+            st.markdown("---")
+            st.markdown("🎯 **Active Execution Directives**")
+            tc1, tc2, tc3 = st.columns(3)
+            with tc1:
+                with st.container(border=True):
+                    st.write("🧱 **Entry Threshold anchor**")
+                    st.subheader(f"₹{last_close:,.2f}")
+            with tc2:
+                with st.container(border=True):
+                    st.write("🛑 **Technical Stop-Loss (1.5x ATR)**")
+                    st.subheader(f"₹{stop_loss_price:,.2f}")
+            with tc3:
+                with st.container(border=True):
+                    st.write(f"🎁 **Take-Profit Target (1:{risk_reward_ratio})**")
+                    st.subheader(f"₹{target_profit_price:,.2f}")
+                    
+            st.caption("ℹ️ Sizing parameters map directly against your custom sidebar dashboard inputs.")
+            
+            fig_bt = go.Figure()
+            fig_bt.add_trace(go.Scatter(x=backtested["Date"], y=backtested["Equity"], name="Strategy Momentum Equity Curve", line=dict(color="#00d4aa", width=2)))
+            fig_bt.add_trace(go.Scatter(x=backtested["Date"], y=backtested["BuyHold"], name="Benchmark Buy & Hold Track", line=dict(color="#38bdf8", dash="dash")))
+            fig_bt.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font=dict(color="#e5e7eb", family="Inter"), margin=dict(l=10, r=10, t=10, b=10))
+            fig_bt.update_yaxes(gridcolor="rgba(255,255,255,0.05)", side="right")
+            st.plotly_chart(fig_bt, use_container_width=True, config={'displayModeBar': False})
+
+        with t4:
+            st.markdown("<h4 style='color:#38bdf8; font-weight:700;'>Corporate Fundamental Snapshot</h4>", unsafe_allow_html=True)
+            fc1, fc2, fc3 = st.columns(3)
+            with fc1:
+                st.metric("Trailing P/E Ratio", f"{f_metrics['pe']:.2f}" if pd.notna(f_metrics['pe']) else "N/A")
+            with fc2:
+                st.metric("Price-to-Book (P/B)", f"{f_metrics['pb']:.2f}" if pd.notna(f_metrics['pb']) else "N/A")
+            with fc3:
+                st.metric("Historical Asset Beta", f"{f_metrics['beta']:.2f}" if pd.notna(f_metrics['beta']) else "N/A")
+                
+            st.markdown(f"**Corporate Background Summary Profile:**\n\n>{f_metrics['summary']}")
+            if show_raw:
+                st.markdown("---")
+                st.dataframe(base.tail(30), use_container_width=True)
+else:
+    st.info("👈 Set structural timeline configurations inside the panel sidebar settings.")
