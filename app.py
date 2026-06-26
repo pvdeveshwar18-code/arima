@@ -111,7 +111,13 @@ def get_signal(df):
     return "HOLD"
 
 # ==========================================================
-# SIDEBAR SYSTEM CONTROLS
+# INITIALIZE GLOBAL SCAN MEMORY POOL
+# ==========================================================
+if "last_scan_data" not in st.session_state:
+    st.session_state.last_scan_data = None
+
+# ==========================================================
+# SIDEBAR SYSTEM CONTROLS & MULTI-STOCK WORKFLOWS
 # ==========================================================
 with st.sidebar:
     st.markdown("<h3 style='color: #00d4aa; font-size: 14px; margin-top:0;'>🛡️ RISK PARAMETERS</h3>", unsafe_allow_html=True)
@@ -122,20 +128,71 @@ with st.sidebar:
     st.markdown("---")
     period = st.selectbox("Historical Window", ["3y", "1y"], index=1)
     interval = st.selectbox("Interval Lookback Frame", ["1d", "1wk"], index=0)
+    
+    st.markdown("---")
+    st.markdown("<h3 style='color: #00d4aa; font-size: 14px;'>📡 MULTI-STOCK SCANNER</h3>", unsafe_allow_html=True)
+    
+    # Quantitative calculation triggered inside the control panel
+    if st.button("🚀 RUN BULK SYSTEM SCAN", use_container_width=True):
+        all_tickers = universe["ticker"].tolist()
+        scan_results = []
+        scan_bar = st.progress(0, text="Iterating market frames...")
+        
+        for idx, ticker in enumerate(all_tickers):
+            try:
+                tk_df = yf.download(ticker, period="6mo", interval="1d", auto_adjust=False, progress=False)
+                if tk_df is None or tk_df.empty: 
+                    continue
+                
+                if isinstance(tk_df.columns, pd.MultiIndex):
+                    tk_df.columns = [c[0] for c in tk_df.columns]
+                tk_df = tk_df.reset_index()
+                
+                calc_df = add_indicators(tk_df)
+                last_s_row = calc_df.iloc[-1]
+                prev_s_row = calc_df.iloc[-2]
+                
+                sig = get_signal(calc_df)
+                c_price = float(last_s_row["Close"])
+                p_price = float(prev_s_row["Close"])
+                pct_change = ((c_price - p_price) / p_price) * 100
+                
+                atr = last_s_row["ATR_14"] if pd.notna(last_s_row["ATR_14"]) else (c_price * 0.02)
+                sl_val = c_price - (atr * 1.5)
+                tp_val = c_price + ((atr * 1.5) * risk_reward_ratio)
+                capital_at_risk = allocated_capital * (risk_per_trade / 100.0)
+                units = int(capital_at_risk // (atr * 1.5)) if atr > 0 else 0
+                
+                above_trend = c_price > last_s_row["SMA_20"]
+                
+                scan_results.append({
+                    "Ticker": ticker.replace(".NS", ""),
+                    "Price": f"₹{c_price:,.2f}",
+                    "RSI": f"{last_s_row['RSI_14']:.1f}",
+                    "Signal": sig,
+                    "Target Size": f"{units} Units",
+                    "Stop-Loss": f"₹{sl_val:,.2f}",
+                    "Take-Profit": f"₹{tp_val:,.2f}",
+                    "raw_signal": sig,
+                    "pct_change": pct_change,
+                    "above_trend": above_trend
+                })
+            except:
+                continue
+            scan_bar.progress((idx + 1) / len(all_tickers), text=f"Scanning: {ticker}")
+            
+        if scan_results:
+            st.session_state.last_scan_data = scan_results
+            st.sidebar.success("Scan complete!")
 
 # ==========================================================
-# ALL 5 ORIGINAL MAIN APPLICATION NAVIGATION TABS RESTORED
+# RESTRUCTURED MAIN APPLICATION VIEW TABS
 # ==========================================================
-view_tab, scan_tab, summary_tab, backtest_tab, paper_tab = st.tabs([
+view_tab, backtest_tab, paper_tab = st.tabs([
     "🔍 SINGLE ASSET ANALYSIS", 
-    "🎯 QUANT SCANNER ENGINE", 
-    "📊 METRICS & HEATMAP SUMMARY",
     "📈 BACKTESTING ENGINE",
     "💵 REAL-TIME PAPERTREADING"
 ])
-
-if "last_scan_data" not in st.session_state:
-    st.session_state.last_scan_data = None
 
 # ----------------------------------------------------------
 # TAB 1: INDIVIDUAL CHART TERMINAL
@@ -182,139 +239,57 @@ with view_tab:
         except Exception as e:
             st.error(f"Error compiling asset chart data: {e}")
 
-# ----------------------------------------------------------
-# TAB 2: PORTFOLIO RISK SCANNER ENGINE
-# ----------------------------------------------------------
-with scan_tab:
-    st.markdown("<h3 style='font-size:16px;'>📊 SCAN TARGET METRIC AGGREGATION</h3>", unsafe_allow_html=True)
-    
-    if st.button("🚀 EXECUTE MULTI-FACTOR SCAN SEQUENCE", use_container_width=True):
-        all_tickers = universe["ticker"].tolist()
-        scan_results = []
-        
-        scan_bar = st.progress(0, text="Iterating market universe arrays safely...")
-        
-        for idx, ticker in enumerate(all_tickers):
-            try:
-                tk_df = yf.download(ticker, period="6mo", interval="1d", auto_adjust=False, progress=False)
-                if tk_df is None or tk_df.empty: continue
-                
-                if isinstance(tk_df.columns, pd.MultiIndex):
-                    tk_df.columns = [c[0] for c in tk_df.columns]
-                tk_df = tk_df.reset_index()
-                
-                calc_df = add_indicators(tk_df)
-                last_s_row = calc_df.iloc[-1]
-                prev_s_row = calc_df.iloc[-2]
-                
-                sig = get_signal(calc_df)
-                c_price = float(last_s_row["Close"])
-                p_price = float(prev_s_row["Close"])
-                pct_change = ((c_price - p_price) / p_price) * 100
-                
-                atr = last_s_row["ATR_14"] if pd.notna(last_s_row["ATR_14"]) else (c_price * 0.02)
-                sl_val = c_price - (atr * 1.5)
-                tp_val = c_price + ((atr * 1.5) * risk_reward_ratio)
-                capital_at_risk = allocated_capital * (risk_per_trade / 100.0)
-                units = int(capital_at_risk // (atr * 1.5)) if atr > 0 else 0
-                
-                above_trend = c_price > last_s_row["SMA_20"]
-                
-                scan_results.append({
-                    "Ticker": ticker.replace(".NS", ""),
-                    "Price": f"₹{c_price:,.2f}",
-                    "RSI": f"{last_s_row['RSI_14']:.1f}",
-                    "Signal": sig,
-                    "Target Size": f"{units} Units",
-                    "Stop-Loss": f"₹{sl_val:,.2f}",
-                    "Take-Profit": f"₹{tp_val:,.2f}",
-                    "raw_signal": sig,
-                    "pct_change": pct_change,
-                    "above_trend": above_trend
-                })
-            except:
-                continue
-            scan_bar.progress((idx + 1) / len(all_tickers), text=f"Processing stock data stream: {ticker}")
-            
-        if scan_results:
-            st.session_state.last_scan_data = scan_results
-            st.success("Matrix scan executed successfully.")
-
+    # Display the results of the background multi-stock matrix underneath the main viewer if active
     if st.session_state.last_scan_data is not None:
-        df_final = pd.DataFrame(st.session_state.last_scan_data)
+        st.markdown("---")
+        st.markdown("<h3 style='font-size:18px; color:#00d4aa;'>🎯 LIVE SCREENER RESULTS MATRIX</h3>", unsafe_allow_html=True)
         
-        t_buy, t_sell, t_all = st.tabs(["🟢 ACTIVE BUY SETUPS", "🔴 ACTIVE EXITS", "🌐 COMPLETE SCREEN MATRIX"])
+        df_final = pd.DataFrame(st.session_state.last_scan_data)
+        t_buy, t_sell, t_all, t_heatmap = st.tabs(["🟢 ACTIVE BUY SETUPS", "🔴 ACTIVE EXITS", "🌐 COMPLETE MATRIX", "📊 HEATMAP INDEX"])
+        
         with t_buy:
             buys = df_final[df_final["raw_signal"] == "BUY"].drop(columns=["raw_signal", "pct_change", "above_trend"])
             if not buys.empty: st.dataframe(buys, use_container_width=True, hide_index=True)
-            else: st.info("No active algorithmic buy configurations matched current criteria.")
+            else: st.info("No tickers match active structural trend buy filters.")
         with t_sell:
             sells = df_final[df_final["raw_signal"] == "SELL"].drop(columns=["raw_signal", "pct_change", "above_trend"])
             if not sells.empty: st.dataframe(sells, use_container_width=True, hide_index=True)
             else: st.info("No tracking assets currently flag structural exit targets.")
         with t_all:
             st.dataframe(df_final.drop(columns=["raw_signal", "pct_change", "above_trend"]), use_container_width=True, hide_index=True)
-
-# ----------------------------------------------------------
-# TAB 3: METRICS SUMMARY MARKET PROFILE
-# ----------------------------------------------------------
-with summary_tab:
-    if st.session_state.last_scan_data is None:
-        st.info("⚠️ Please trigger the 'RUN BULK RADAR SCAN SEQUENCE' button inside the Quant Scanner tab to populate dashboard analytics.")
-    else:
-        c_left, c_right = st.columns([2, 1])
-        cached_list = st.session_state.last_scan_data
-        
-        bullish_nodes = sum(1 for x in cached_list if x["above_trend"])
-        total_nodes = len(cached_list)
-        
-        with c_left:
-            st.markdown("<h3 style='font-size:15px; color:#00d4aa;'>🎨 DYNAMIC SECTORAL HEATMAP MATRIX</h3>", unsafe_allow_html=True)
-            h_cols = st.columns(4)
-            for idx, item in enumerate(cached_list[:12]):
-                target_col = h_cols[idx % 4]
-                color_hue = "#00d4aa" if item["pct_change"] >= 0 else "#f43f5e"
-                bg_hue = "rgba(0, 212, 170, 0.1)" if item["pct_change"] >= 0 else "rgba(244, 63, 94, 0.1)"
-                
-                target_col.markdown(
-                    f"""
-                    <div style='background: {bg_hue}; border: 1px solid {color_hue}33; padding: 12px; border-radius: 6px; text-align: center; margin-bottom: 8px;'>
-                        <div style='font-weight: 700; font-size: 13px;'>{item["Ticker"]}</div>
-                        <div style='font-family: "Space Mono", monospace; font-size: 11px; margin-top: 2px; color: {color_hue};'>{item["pct_change"]:+.2f}%</div>
-                    </div>
-                    """,
+        with t_heatmap:
+            c_left, c_right = st.columns([2, 1])
+            cached_list = st.session_state.last_scan_data
+            bullish_nodes = sum(1 for x in cached_list if x["above_trend"])
+            total_nodes = len(cached_list)
+            
+            with c_left:
+                h_cols = st.columns(4)
+                for idx, item in enumerate(cached_list[:12]):
+                    target_col = h_cols[idx % 4]
+                    color_hue = "#00d4aa" if item["pct_change"] >= 0 else "#f43f5e"
+                    bg_hue = "rgba(0, 212, 170, 0.1)" if item["pct_change"] >= 0 else "rgba(244, 63, 94, 0.1)"
+                    target_col.markdown(
+                        f"<div style='background: {bg_hue}; border: 1px solid {color_hue}33; padding: 12px; border-radius: 6px; text-align: center; margin-bottom: 8px;'><div style='font-weight: 700; font-size: 13px;'>{item['Ticker']}</div><div style='font-family: \"Space Mono\", monospace; font-size: 11px; margin-top: 2px; color: {color_hue};'>{item['pct_change']:+.2f}%</div></div>",
+                        unsafe_allow_html=True
+                    )
+            with c_right:
+                sentiment_score = int((bullish_nodes / total_nodes) * 100) if total_nodes > 0 else 50
+                st.markdown(
+                    f'<div class="accent-card" style="text-align: center;"><p style="font-family: \'Space Mono\', monospace; font-size: 10px; color:#64748b; margin:0;">PERCENTAGE OVER 20 SMA</p><h1 style="color: #38bdf8; font-size: 42px; margin: 8px 0;">{sentiment_score}%</h1><div style="width: 100%; background: rgba(255,255,255,0.05); height: 6px; border-radius: 3px; overflow:hidden;"><div style="width: {sentiment_score}%; background: #00d4aa; height:100%;"></div></div></div>',
                     unsafe_allow_html=True
                 )
-                
-        with c_right:
-            st.markdown("<h3 style='font-size:15px; color:#00d4aa;'>📊 MARKET BREADTH INDEX</h3>", unsafe_allow_html=True)
-            sentiment_score = int((bullish_nodes / total_nodes) * 100) if total_nodes > 0 else 50
-            
-            st.markdown(
-                f"""
-                <div class="accent-card" style="text-align: center;">
-                    <p style="font-family: 'Space Mono', monospace; font-size: 10px; color:#64748b; margin:0;">PERCENTAGE OF STOCKS OVER 20 SMA</p>
-                    <h1 style="color: #38bdf8; font-size: 42px; margin: 8px 0;">{sentiment_score}%</h1>
-                    <div style="width: 100%; background: rgba(255,255,255,0.05); height: 6px; border-radius: 3px; overflow:hidden;">
-                        <div style="width: {sentiment_score}%; background: #00d4aa; height:100%;"></div>
-                    </div>
-                </div>
-                """,
-                unsafe_allow_html=True
-            )
 
 # ----------------------------------------------------------
-# TAB 4: BACKTESTING MODULE RESTORED PLACEHOLDER
+# TAB 2: BACKTESTING ENGINE
 # ----------------------------------------------------------
 with backtest_tab:
     st.markdown("<h3 style='font-size:16px; color:#00d4aa;'>📈 ALGORITHMIC BACKTEST ENGINE</h3>", unsafe_allow_html=True)
     st.info("Historical verification environment loaded. Ready to compile strategy performance rules against historical ticks.")
-    # Paste your original backtesting matrix loops or execution charts right here!
 
 # ----------------------------------------------------------
-# TAB 5: REAL-TIME PAPER TRADING ACCELERATOR RESTORED PLACEHOLDER
+# TAB 3: REAL-TIME PAPER TRADING
 # ----------------------------------------------------------
 with paper_tab:
-    st.markdown("<h3 style='font-size:16px; color:#00d4aa;'>💵 VIRTUAL ACCOUNT SANDBOX Execution</h3>", unsafe_allow_html=True)
+    st.markdown("<h3 style='font-size:16px; color:#00d4aa;'>💵 VIRTUAL ACCOUNT SANDBOX EXECUTIONS</h3>", unsafe_allow_html=True)
     st.info("Simulated terminal routing configuration online. Ready to evaluate structural trade parameters in real time.")
-    # Paste your live telemetry tracker dashboard or transaction logging frames right here!
