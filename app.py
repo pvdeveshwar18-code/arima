@@ -11,6 +11,8 @@ from statsmodels.tsa.arima.model import ARIMA
 from statsmodels.tsa.stattools import adfuller
 import concurrent.futures
 from statsmodels.tsa.holtwinters import ExponentialSmoothing
+import xml.etree.ElementTree as ET
+import urllib.request
 
 warnings.filterwarnings("ignore")
 
@@ -372,6 +374,60 @@ def market_status():
         return "🟢 NSE OPEN", "#00e87a"
     return "🔴 NSE CLOSED", "#ff3355"
 
+@st.cache_data(ttl=1800, show_spinner=False)
+def load_indices_data():
+    tickers = ["^NSEI", "^NSEBANK", "^BSESN", "^CNXIT"]
+    try:
+        df_all = yf.download(tickers, period="1y", interval="1d", group_by="ticker", progress=False)
+        return df_all
+    except Exception:
+        return None
+
+@st.cache_data(ttl=900, show_spinner=False)
+def fetch_ticker_news(ticker):
+    url = f"https://feeds.finance.yahoo.com/rss.2.0/headline?s={ticker}"
+    try:
+        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req, timeout=5) as response:
+            xml_data = response.read()
+        root = ET.fromstring(xml_data)
+        news_items = []
+        for item in root.findall(".//item"):
+            title = item.find("title").text if item.find("title") is not None else ""
+            link = item.find("link").text if item.find("link") is not None else ""
+            pub_date = item.find("pubDate").text if item.find("pubDate") is not None else ""
+            news_items.append({"title": title, "link": link, "date": pub_date})
+        return news_items
+    except Exception:
+        return []
+
+BULLISH_WORDS = {"surge", "grow", "growth", "jump", "rise", "gain", "profit", "record", "high", "success", "optimistic", "bullish", "beat", "positive", "expand", "outperform", "buy", "rally"}
+BEARISH_WORDS = {"slump", "fall", "decline", "drop", "loss", "plunge", "negative", "bearish", "miss", "pessimistic", "dip", "underperform", "sell", "debt", "crisis", "warn", "crash"}
+
+def analyze_sentiment(news_items):
+    if not news_items:
+        return 0.0, "NEUTRAL"
+    total_score = 0
+    for item in news_items:
+        title_lower = item["title"].lower()
+        score = 0
+        for w in BULLISH_WORDS:
+            if w in title_lower:
+                score += 1
+        for w in BEARISH_WORDS:
+            if w in title_lower:
+                score -= 1
+        total_score += score
+    
+    avg_score = total_score / len(news_items)
+    if avg_score > 0.15:
+        category = "BULLISH"
+    elif avg_score < -0.15:
+        category = "BEARISH"
+    else:
+        category = "NEUTRAL"
+    return avg_score, category
+
 # ══════════════════════════════════════════════════════════════
 # HEADER
 # ══════════════════════════════════════════════════════════════
@@ -393,33 +449,129 @@ with col_clock:
 st.markdown("<hr style='border-color:rgba(0,200,255,0.12);margin:0.65rem 0;'>", unsafe_allow_html=True)
 
 # ══════════════════════════════════════════════════════════════
+# TOP SEARCH BAR (TRADINGVIEW STYLE)
+# ══════════════════════════════════════════════════════════════
+st.markdown("<div style='background:rgba(7,18,32,0.45);border:1px solid rgba(0,200,255,0.12);padding:12px 18px;border-radius:6px;margin-bottom:15px;backdrop-filter:blur(4px);'>", unsafe_allow_html=True)
+c1, c2 = st.columns([5, 3])
+with c1:
+    custom_ticker_toggle = st.checkbox("Use Custom Ticker Symbol (e.g. AAPL, BTC-USD)", value=False)
+    if custom_ticker_toggle:
+        selected_ticker = st.text_input("Enter Ticker Symbol", value="RELIANCE.NS").strip()
+        selected_name = selected_ticker.split(".")[0]
+        is_dashboard = False
+    else:
+        sector_choice_main = st.session_state.get("sector_choice_state", "🌐 All Sectors")
+        search_q_main = st.session_state.get("search_q_state", "")
+        
+        if sector_choice_main == "🌐 All Sectors":
+            stock_pool_main = ALL_STOCKS
+        else:
+            stock_pool_main = {f"{n} ({s})": f"{s}.NS" for n,s in SECTORS[sector_choice_main]}
+        if search_q_main:
+            stock_pool_main = {k:v for k,v in stock_pool_main.items() if search_q_main.lower() in k.lower()}
+        if not stock_pool_main:
+            stock_pool_main = ALL_STOCKS
+            
+        options = ["📊 MARKET DASHBOARD"] + list(stock_pool_main.keys())
+        selected_label = st.selectbox("Search Stock Ticker", options, label_visibility="collapsed")
+        if selected_label == "📊 MARKET DASHBOARD":
+            selected_ticker = "^NSEI"
+            selected_name = "NIFTY 50"
+            is_dashboard = True
+        else:
+            selected_ticker = stock_pool_main[selected_label]
+            selected_name = selected_label.split(" (")[0]
+            is_dashboard = False
+st.markdown("</div>", unsafe_allow_html=True)
+
+if is_dashboard:
+    # ══════════════════════════════════════════════════════════════
+    # MARKET DASHBOARD (LANDING PAGE)
+    # ══════════════════════════════════════════════════════════════
+    st.markdown('<h2 class="xerces-title" style="font-size:1.6rem;margin-bottom:15px;">📊 INDIAN MARKET OVERVIEW</h2>', unsafe_allow_html=True)
+    
+    df_indices = load_indices_data()
+    if df_indices is not None:
+        idx_cols = st.columns(4)
+        indices_list = [
+            ("NIFTY 50", "^NSEI", "#00e87a"),
+            ("BANK NIFTY", "^NSEBANK", "#00c8ff"),
+            ("SENSEX", "^BSESN", "#ffcc00"),
+            ("NIFTY IT", "^CNXIT", "#ff6b35")
+        ]
+        
+        for col, (name, sym, color) in zip(idx_cols, indices_list):
+            try:
+                if isinstance(df_indices.columns, pd.MultiIndex):
+                    idx_df = df_indices[sym].dropna().reset_index()
+                else:
+                    idx_df = df_indices.dropna().reset_index()
+                
+                last_row = idx_df.iloc[-1]
+                prev_row = idx_df.iloc[-2]
+                close_v = float(last_row["Close"])
+                chg_pct = (close_v - float(prev_row["Close"])) / float(prev_row["Close"]) * 100
+                chg_color = "#00e87a" if chg_pct >= 0 else "#ff3355"
+                arrow = "▲" if chg_pct >= 0 else "▼"
+                
+                col.markdown(f"""
+                <div class="glass-card">
+                    <p class="glass-label" style="color:{color};font-weight:bold;">{name}</p>
+                    <div class="glass-value" style="font-size:1.2rem;">{close_v:,.2f}</div>
+                    <p style="font-size:11px;color:{chg_color};margin:2px 0 0 0;font-weight:600;">
+                        {arrow} {abs(chg_pct):.2f}%
+                    </p>
+                </div>""", unsafe_allow_html=True)
+            except Exception:
+                col.warning(f"Error loading {name}")
+                
+        st.markdown('<p class="section-header">[ 📈 NIFTY 50 INDEX TREND ]</p>', unsafe_allow_html=True)
+        try:
+            n50_df = df_indices["^NSEI"].dropna().reset_index()
+            fig_n50 = go.Figure()
+            fig_n50.add_trace(go.Scatter(x=n50_df["Date"], y=n50_df["Close"], name="Nifty 50 Close", line=dict(color="#00e87a", width=2)))
+            fig_n50.update_layout(
+                height=350, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                font=dict(color="#ddeeff", family="Space Mono", size=10),
+                xaxis=dict(gridcolor="rgba(0,200,255,0.05)"),
+                yaxis=dict(gridcolor="rgba(0,200,255,0.05)", tickprefix="₹"),
+                margin=dict(l=10, r=10, t=10, b=10)
+            )
+            st.plotly_chart(fig_n50, use_container_width=True)
+        except Exception as e:
+            st.error(f"Error loading Nifty 50 Chart: {e}")
+            
+        st.markdown("""
+        <div class="glass-card" style="margin-top:15px;">
+            <p class="section-header" style="margin-top:0;">💡 Broad Market Overview</p>
+            <p style="font-size:12px;color:#a0aec0;line-height:1.6;margin:0;">
+                Welcome to <b>XERCES // QUANT ENGINE</b>. Use the TradingView-style search bar at the top to select an individual stock ticker and load our advanced quantitative and machine learning modules, including ARIMA + Holt-Winters price forecasting, crossover backtesters, and portfolio optimizer.
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
+    else:
+        st.error("Failed to load market index data. Check internet connection.")
+    st.stop()
+
+# ══════════════════════════════════════════════════════════════
 # SIDEBAR
 # ══════════════════════════════════════════════════════════════
 with st.sidebar:
-    st.markdown("<p class='telemetry-tag' style='color:#00c8ff;font-weight:700;margin-bottom:5px;'>[ 🔍 STOCK SELECTOR ]</p>", unsafe_allow_html=True)
+    st.markdown("<p class='telemetry-tag' style='color:#00c8ff;font-weight:700;margin-bottom:5px;'>[ ⚙️ GLOBAL SETTINGS ]</p>", unsafe_allow_html=True)
 
     sector_choice = st.selectbox("Filter by Sector", ["🌐 All Sectors"] + list(SECTORS.keys()))
+    st.session_state["sector_choice_state"] = sector_choice
     if sector_choice == "🌐 All Sectors":
         stock_pool = ALL_STOCKS
     else:
         stock_pool = {f"{n} ({s})": f"{s}.NS" for n,s in SECTORS[sector_choice]}
 
-    search_q = st.text_input("Search stock", placeholder="e.g. Infosys, HDFC, Tata...")
+    search_q = st.text_input("Filter Tickers List", placeholder="e.g. Infosys, HDFC, Tata...")
+    st.session_state["search_q_state"] = search_q
     if search_q:
         stock_pool = {k:v for k,v in stock_pool.items() if search_q.lower() in k.lower()}
     if not stock_pool:
-        st.warning("No match — showing full list.")
         stock_pool = ALL_STOCKS
-
-    custom_ticker_toggle = st.checkbox("Use Custom Ticker", value=False)
-    if custom_ticker_toggle:
-        custom_ticker_input = st.text_input("Enter Ticker (e.g. AAPL, BTC-USD, RELIANCE.NS)", value="RELIANCE.NS")
-        selected_ticker = custom_ticker_input.strip()
-        selected_name = selected_ticker.split(".")[0]
-    else:
-        selected_label = st.selectbox("Select Stock", list(stock_pool.keys()))
-        selected_ticker = stock_pool[selected_label]
-        selected_name   = selected_label.split(" (")[0]
 
     st.markdown("---")
     st.markdown("<p class='telemetry-tag' style='color:#00c8ff;font-weight:700;margin-bottom:5px;'>[ 🛡️ RISK CONTROLS ]</p>", unsafe_allow_html=True)
@@ -576,12 +728,14 @@ st.markdown("<br>", unsafe_allow_html=True)
 # ══════════════════════════════════════════════════════════════
 # TABS
 # ══════════════════════════════════════════════════════════════
-tab_chart, tab_arima, tab_backtest, tab_scan, tab_risk, tab_help = st.tabs([
+tab_chart, tab_arima, tab_backtest, tab_scan, tab_risk, tab_news, tab_port, tab_help = st.tabs([
     "📊 TECHNICAL CHART",
     "🔮 ARIMA FORECAST",
     "📈 BACKTEST ENGINE",
     "📡 MARKET SCANNER",
     "🛡️ RISK CALCULATOR",
+    "📰 NEWS & SENTIMENT",
+    "💼 PORTFOLIO OPTIMIZER",
     "❓ MANUAL"
 ])
 
@@ -1014,7 +1168,167 @@ with tab_risk:
         st.warning("Stop loss must be below entry price.")
 
 # ──────────────────────────────────────────────────────────────
-# TAB 6: HELP
+# TAB 6: NEWS & SENTIMENT SCANNER
+# ──────────────────────────────────────────────────────────────
+with tab_news:
+    st.markdown(f'<p class="section-header">[ 📰 NEWS & SENTIMENT SCANNER — {selected_name} ]</p>', unsafe_allow_html=True)
+    
+    with st.spinner("Fetching latest news articles from Yahoo Finance..."):
+        news_items = fetch_ticker_news(selected_ticker)
+        
+    if news_items:
+        sentiment_val, sentiment_cat = analyze_sentiment(news_items)
+        
+        # Display sentiment metrics
+        ns1, ns2 = st.columns([1, 2])
+        with ns1:
+            sent_color = {"BULLISH": "#00e87a", "BEARISH": "#ff3355", "NEUTRAL": "#ffcc00"}[sentiment_cat]
+            st.markdown(f"""
+            <div class="glass-card" style="text-align:center;padding:25px 15px;">
+                <p class="glass-label">Aggregated News Sentiment</p>
+                <div style="font-family:'Orbitron',sans-serif;font-size:2rem;font-weight:900;color:{sent_color};margin:10px 0;">{sentiment_cat}</div>
+                <p style="font-size:11px;color:#6a90aa;margin:0;">Score: {sentiment_val:+.2f} (Range -1 to +1)</p>
+            </div>""", unsafe_allow_html=True)
+        with ns2:
+            st.markdown(f"""
+            <div class="glass-card" style="padding:15px;">
+                <p class="glass-label" style="margin-bottom:8px;">Sentiment Interpretation</p>
+                <p style="font-size:12px;color:#a0aec0;line-height:1.6;margin:0;">
+                    Our engine scanned the last {len(news_items)} news headlines related to <b>{selected_name}</b> and scored them based on keyword density. 
+                    A score above +0.15 is considered <b>Bullish</b>, below -0.15 is <b>Bearish</b>, and in between is <b>Neutral</b>. Use this to gauge short-term sentiment.
+                </p>
+            </div>""", unsafe_allow_html=True)
+            
+        st.markdown('<p class="section-header">[ RECENT NEWS HEADLINES ]</p>', unsafe_allow_html=True)
+        for item in news_items:
+            date_str = item["date"]
+            st.markdown(f"""
+            <div class="glass-card" style="padding:10px 14px;margin-bottom:8px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;">
+                    <a href="{item['link']}" target="_blank" style="color:#00c8ff;text-decoration:none;font-weight:600;font-size:13px;font-family:'Inter',sans-serif;">
+                        {item['title']}
+                    </a>
+                    <span style="font-size:10px;color:#4a7090;font-family:'Space Mono',monospace;">{date_str[:16]}</span>
+                </div>
+            </div>""", unsafe_allow_html=True)
+    else:
+        st.info(f"No recent news articles found for ticker {selected_ticker}.")
+
+# ──────────────────────────────────────────────────────────────
+# TAB 7: PORTFOLIO OPTIMIZER
+# ──────────────────────────────────────────────────────────────
+with tab_port:
+    st.markdown(f'<p class="section-header">[ 💼 QUANT PORTFOLIO OPTIMIZER ]</p>', unsafe_allow_html=True)
+    st.caption("ℹ️ Multi-Asset allocation optimizer based on Modern Portfolio Theory (MPT) and daily asset returns.")
+    
+    selected_keys = st.multiselect("Select Assets for Portfolio", list(ALL_STOCKS.keys()), 
+                                   default=[k for k in ALL_STOCKS.keys() if "Reliance" in k or "TCS (" in k or "HDFC Bank" in k or "Infosys" in k][:4])
+    
+    if len(selected_keys) < 2:
+        st.warning("Please select at least 2 assets to optimize a portfolio.")
+    else:
+        tickers_opt = [ALL_STOCKS[k] for k in selected_keys]
+        names_opt = [k.split(" (")[0] for k in selected_keys]
+        
+        with st.spinner("Downloading historical returns and running Monte Carlo optimizer..."):
+            try:
+                df_port = yf.download(tickers_opt, period="2y", interval="1d", auto_adjust=True, progress=False)
+                if df_port is not None and not df_port.empty:
+                    if isinstance(df_port.columns, pd.MultiIndex):
+                        close_df = df_port["Close"]
+                    else:
+                        close_df = df_port
+                        
+                    returns_df = close_df.pct_change().dropna()
+                    
+                    num_assets = len(tickers_opt)
+                    mean_returns = returns_df.mean()
+                    cov_matrix = returns_df.cov()
+                    
+                    num_portfolios = 2000
+                    results = np.zeros((3, num_portfolios))
+                    weights_record = []
+                    
+                    for i in range(num_portfolios):
+                        w = np.random.random(num_assets)
+                        w /= np.sum(w)
+                        p_ret = np.sum(mean_returns * w) * 252
+                        p_vol = np.sqrt(np.dot(w.T, np.dot(cov_matrix * 252, w)))
+                        p_sharpe = p_ret / p_vol if p_vol > 0 else 0
+                        
+                        results[0,i] = p_vol
+                        results[1,i] = p_ret
+                        results[2,i] = p_sharpe
+                        weights_record.append(w)
+                        
+                    max_sharpe_idx = np.argmax(results[2])
+                    opt_w = weights_record[max_sharpe_idx]
+                    opt_vol = results[0, max_sharpe_idx]
+                    opt_ret = results[1, max_sharpe_idx]
+                    opt_sharpe = results[2, max_sharpe_idx]
+                    
+                    min_vol_idx = np.argmin(results[0])
+                    min_w = weights_record[min_vol_idx]
+                    min_vol = results[0, min_vol_idx]
+                    min_ret = results[1, min_vol_idx]
+                    min_sharpe = results[2, min_vol_idx]
+                    
+                    objective = st.radio("Optimization Target", ["Maximize Sharpe Ratio (Target: High Efficiency)", "Minimize Volatility (Target: Low Risk)"], horizontal=True)
+                    
+                    selected_w = opt_w if "Sharpe" in objective else min_w
+                    sel_vol = opt_vol if "Sharpe" in objective else min_vol
+                    sel_ret = opt_ret if "Sharpe" in objective else min_ret
+                    sel_sharpe = opt_sharpe if "Sharpe" in objective else min_sharpe
+                    
+                    pm1, pm2, pm3 = st.columns(3)
+                    pm1.markdown(f'<div class="glass-card"><p class="glass-label">Expected Annual Return</p>'
+                                 f'<div class="glass-value" style="color:#00e87a;">{sel_ret:.1%}</div></div>', unsafe_allow_html=True)
+                    pm2.markdown(f'<div class="glass-card"><p class="glass-label">Annualized Volatility</p>'
+                                 f'<div class="glass-value" style="color:#ff3355;">{sel_vol:.1%}</div></div>', unsafe_allow_html=True)
+                    pm3.markdown(f'<div class="glass-card"><p class="glass-label">Sharpe Ratio</p>'
+                                 f'<div class="glass-value" style="color:#00c8ff;">{sel_sharpe:.2f}</div></div>', unsafe_allow_html=True)
+                    
+                    pc1, pc2 = st.columns(2)
+                    with pc1:
+                        st.markdown('<p class="section-header">[ 📊 OPTIMAL WEIGHTS ALLOCATION ]</p>', unsafe_allow_html=True)
+                        fig_pie = go.Figure(data=[go.Pie(labels=names_opt, values=selected_w, hole=.4,
+                                                         marker=dict(colors=["#00c8ff", "#00e87a", "#ffcc00", "#ff6b35", "#7c6ef8"]))])
+                        fig_pie.update_layout(
+                            height=300, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                            font=dict(color="#ddeeff", family="Space Mono", size=10),
+                            margin=dict(l=10, r=10, t=10, b=10)
+                        )
+                        st.plotly_chart(fig_pie, use_container_width=True)
+                        
+                    with pc2:
+                        st.markdown('<p class="section-header">[ 📈 EFFICIENT FRONTIER SIMULATION ]</p>', unsafe_allow_html=True)
+                        fig_scatter = go.Figure()
+                        fig_scatter.add_trace(go.Scatter(
+                            x=results[0], y=results[1], mode="markers",
+                            marker=dict(color=results[2], colorscale="Viridis", showscale=True, colorbar=dict(title="Sharpe", thickness=15)),
+                            name="Simulated Portfolios"
+                        ))
+                        fig_scatter.add_trace(go.Scatter(
+                            x=[sel_vol], y=[sel_ret], mode="markers",
+                            marker=dict(color="#ff3355", size=12, symbol="star", line=dict(width=1, color="white")),
+                            name="Selected Optimal"
+                        ))
+                        fig_scatter.update_layout(
+                            height=300, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                            font=dict(color="#ddeeff", family="Space Mono", size=10),
+                            xaxis=dict(title="Annualized Volatility", gridcolor="rgba(0,200,255,0.05)"),
+                            yaxis=dict(title="Expected Return", gridcolor="rgba(0,200,255,0.05)"),
+                            margin=dict(l=10, r=10, t=10, b=10),
+                            legend=dict(bgcolor="rgba(7,18,32,0.5)", font=dict(size=8))
+                        )
+                        st.plotly_chart(fig_scatter, use_container_width=True)
+                else:
+                    st.error("Failed to load historical returns for selected stocks.")
+            except Exception as e:
+                st.error(f"Portfolio Optimization Error: {e}")
+
+# ──────────────────────────────────────────────────────────────
+# TAB 8: HELP
 # ──────────────────────────────────────────────────────────────
 with tab_help:
     st.markdown("""
