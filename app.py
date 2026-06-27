@@ -376,7 +376,7 @@ def market_status():
 
 @st.cache_data(ttl=1800, show_spinner=False)
 def load_indices_data():
-    tickers = ["^NSEI", "^NSEBANK", "^BSESN", "^CNXIT"]
+    tickers = ["^NSEI", "^NSEBANK", "^BSESN", "^CRSMID", "^CNXSC", "^INDIAVIX"]
     try:
         df_all = yf.download(tickers, period="1y", interval="1d", group_by="ticker", progress=False)
         return df_all
@@ -492,15 +492,23 @@ if is_dashboard:
     
     df_indices = load_indices_data()
     if df_indices is not None:
-        idx_cols = st.columns(4)
-        indices_list = [
+        r1_cols = st.columns(3)
+        r2_cols = st.columns(3)
+        
+        indices_row1 = [
             ("NIFTY 50", "^NSEI", "#00e87a"),
             ("BANK NIFTY", "^NSEBANK", "#00c8ff"),
-            ("SENSEX", "^BSESN", "#ffcc00"),
-            ("NIFTY IT", "^CNXIT", "#ff6b35")
+            ("SENSEX", "^BSESN", "#ffcc00")
         ]
         
-        for col, (name, sym, color) in zip(idx_cols, indices_list):
+        indices_row2 = [
+            ("NIFTY MIDCAP 100", "^CRSMID", "#ff6b35"),
+            ("NIFTY SMALLCAP 100", "^CNXSC", "#7c6ef8"),
+            ("INDIA VIX", "^INDIAVIX", "#ff3355")
+        ]
+        
+        # Render Row 1
+        for col, (name, sym, color) in zip(r1_cols, indices_row1):
             try:
                 if isinstance(df_indices.columns, pd.MultiIndex):
                     idx_df = df_indices[sym].dropna().reset_index()
@@ -512,6 +520,37 @@ if is_dashboard:
                 close_v = float(last_row["Close"])
                 chg_pct = (close_v - float(prev_row["Close"])) / float(prev_row["Close"]) * 100
                 chg_color = "#00e87a" if chg_pct >= 0 else "#ff3355"
+                arrow = "▲" if chg_pct >= 0 else "▼"
+                
+                col.markdown(f"""
+                <div class="glass-card">
+                    <p class="glass-label" style="color:{color};font-weight:bold;">{name}</p>
+                    <div class="glass-value" style="font-size:1.2rem;">{close_v:,.2f}</div>
+                    <p style="font-size:11px;color:{chg_color};margin:2px 0 0 0;font-weight:600;">
+                        {arrow} {abs(chg_pct):.2f}%
+                    </p>
+                </div>""", unsafe_allow_html=True)
+            except Exception:
+                col.warning(f"Error loading {name}")
+                
+        # Render Row 2
+        for col, (name, sym, color) in zip(r2_cols, indices_row2):
+            try:
+                if isinstance(df_indices.columns, pd.MultiIndex):
+                    idx_df = df_indices[sym].dropna().reset_index()
+                else:
+                    idx_df = df_indices.dropna().reset_index()
+                
+                last_row = idx_df.iloc[-1]
+                prev_row = idx_df.iloc[-2]
+                close_v = float(last_row["Close"])
+                chg_pct = (close_v - float(prev_row["Close"])) / float(prev_row["Close"]) * 100
+                
+                if sym == "^INDIAVIX":
+                    chg_color = "#ff3355" if chg_pct >= 0 else "#00e87a"
+                else:
+                    chg_color = "#00e87a" if chg_pct >= 0 else "#ff3355"
+                    
                 arrow = "▲" if chg_pct >= 0 else "▼"
                 
                 col.markdown(f"""
