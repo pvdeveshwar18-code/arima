@@ -449,40 +449,62 @@ with col_clock:
 st.markdown("<hr style='border-color:rgba(0,200,255,0.12);margin:0.65rem 0;'>", unsafe_allow_html=True)
 
 # ══════════════════════════════════════════════════════════════
-# TOP SEARCH BAR (TRADINGVIEW STYLE)
+# TOP SEARCH BAR (TRADINGVIEW STYLE TEXT INPUT)
 # ══════════════════════════════════════════════════════════════
 st.markdown("<div style='background:rgba(7,18,32,0.45);border:1px solid rgba(0,200,255,0.12);padding:12px 18px;border-radius:6px;margin-bottom:15px;backdrop-filter:blur(4px);'>", unsafe_allow_html=True)
-c1, c2 = st.columns([5, 3])
+c1, c2 = st.columns([5, 1])
 with c1:
-    custom_ticker_toggle = st.checkbox("Use Custom Ticker Symbol (e.g. AAPL, BTC-USD)", value=False)
-    if custom_ticker_toggle:
-        selected_ticker = st.text_input("Enter Ticker Symbol", value="RELIANCE.NS").strip()
-        selected_name = selected_ticker.split(".")[0]
+    search_ticker = st.text_input(
+        "Search Ticker",
+        value="",
+        placeholder="Search stock name or symbol (e.g. Reliance, TCS, AAPL, BTC-USD)...",
+        label_visibility="collapsed"
+    )
+with c2:
+    if search_ticker:
+        if st.button("Clear Search", use_container_width=True):
+            st.rerun()
+st.markdown("</div>", unsafe_allow_html=True)
+
+# Ticker Resolution Logic
+selected_ticker = ""
+selected_name = ""
+is_dashboard = True
+
+search_ticker = search_ticker.strip()
+if search_ticker:
+    match_ticker = None
+    match_name = None
+    
+    # 1. Exact or partial match in ALL_STOCKS keys (e.g. "Reliance Industries (RELIANCE)")
+    for label, ticker in ALL_STOCKS.items():
+        if search_ticker.lower() in label.lower():
+            match_ticker = ticker
+            match_name = label.split(" (")[0]
+            break
+            
+    # 2. If no match in keys, check if it's a direct symbol match in values
+    if not match_ticker:
+        for label, ticker in ALL_STOCKS.items():
+            sym_only = ticker.replace(".NS", "")
+            if search_ticker.upper() == sym_only or search_ticker.upper() == ticker:
+                match_ticker = ticker
+                match_name = label.split(" (")[0]
+                break
+                
+    if match_ticker:
+        selected_ticker = match_ticker
+        selected_name = match_name
         is_dashboard = False
     else:
-        sector_choice_main = st.session_state.get("sector_choice_state", "🌐 All Sectors")
-        search_q_main = st.session_state.get("search_q_state", "")
-        
-        if sector_choice_main == "🌐 All Sectors":
-            stock_pool_main = ALL_STOCKS
-        else:
-            stock_pool_main = {f"{n} ({s})": f"{s}.NS" for n,s in SECTORS[sector_choice_main]}
-        if search_q_main:
-            stock_pool_main = {k:v for k,v in stock_pool_main.items() if search_q_main.lower() in k.lower()}
-        if not stock_pool_main:
-            stock_pool_main = ALL_STOCKS
-            
-        options = ["📊 MARKET DASHBOARD"] + list(stock_pool_main.keys())
-        selected_label = st.selectbox("Search Stock Ticker", options, label_visibility="collapsed")
-        if selected_label == "📊 MARKET DASHBOARD":
-            selected_ticker = "^NSEI"
-            selected_name = "NIFTY 50"
-            is_dashboard = True
-        else:
-            selected_ticker = stock_pool_main[selected_label]
-            selected_name = selected_label.split(" (")[0]
-            is_dashboard = False
-st.markdown("</div>", unsafe_allow_html=True)
+        # No match -> treat as custom ticker directly
+        selected_ticker = search_ticker.upper()
+        selected_name = selected_ticker
+        is_dashboard = False
+else:
+    selected_ticker = "^NSEI"
+    selected_name = "NIFTY 50"
+    is_dashboard = True
 
 if is_dashboard:
     # ══════════════════════════════════════════════════════════════
@@ -596,23 +618,6 @@ if is_dashboard:
 # SIDEBAR
 # ══════════════════════════════════════════════════════════════
 with st.sidebar:
-    st.markdown("<p class='telemetry-tag' style='color:#00c8ff;font-weight:700;margin-bottom:5px;'>[ ⚙️ GLOBAL SETTINGS ]</p>", unsafe_allow_html=True)
-
-    sector_choice = st.selectbox("Filter by Sector", ["🌐 All Sectors"] + list(SECTORS.keys()))
-    st.session_state["sector_choice_state"] = sector_choice
-    if sector_choice == "🌐 All Sectors":
-        stock_pool = ALL_STOCKS
-    else:
-        stock_pool = {f"{n} ({s})": f"{s}.NS" for n,s in SECTORS[sector_choice]}
-
-    search_q = st.text_input("Filter Tickers List", placeholder="e.g. Infosys, HDFC, Tata...")
-    st.session_state["search_q_state"] = search_q
-    if search_q:
-        stock_pool = {k:v for k,v in stock_pool.items() if search_q.lower() in k.lower()}
-    if not stock_pool:
-        stock_pool = ALL_STOCKS
-
-    st.markdown("---")
     st.markdown("<p class='telemetry-tag' style='color:#00c8ff;font-weight:700;margin-bottom:5px;'>[ 🛡️ RISK CONTROLS ]</p>", unsafe_allow_html=True)
     allocated_capital = st.number_input("Capital Pool (₹)", min_value=1000, value=100000, step=5000)
     risk_per_trade    = st.slider("Risk per Trade (%)", 0.5, 5.0, 1.5, step=0.1)
