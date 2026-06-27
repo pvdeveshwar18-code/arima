@@ -434,6 +434,10 @@ with st.sidebar:
     show_vol  = st.checkbox("Volume bars", value=True)
 
     st.markdown("---")
+    st.markdown("<p class='telemetry-tag' style='color:#00c8ff;font-weight:700;margin-bottom:5px;'>[ 📈 BACKTEST STRATEGY ]</p>", unsafe_allow_html=True)
+    backtest_strategy = st.selectbox("Strategy Template", ["SMA Crossover", "RSI Mean Reversion", "Bollinger Bands Breakout"])
+
+    st.markdown("---")
     st.caption("⚠️ Not SEBI registered. Statistical analysis only — not financial advice. Data from Yahoo Finance.")
 
 # ══════════════════════════════════════════════════════════════
@@ -462,11 +466,48 @@ lo52      = float(df["Close"].iloc[-252:].min()) if len(df) >= 252 else float(df
 rsi_val   = float(last["RSI_14"]) if pd.notna(last.get("RSI_14")) else 50.0
 
 # ══════════════════════════════════════════════════════════════
-# RUN SMA CROSSOVER BACKTEST (SHARED)
+# RUN SHARED STRATEGY BACKTEST (Next-day Open Execution)
 # ══════════════════════════════════════════════════════════════
-bt_df = df.dropna(subset=["SMA_20","SMA_50","Close","Open"]).copy().reset_index(drop=True)
+bt_df = df.copy().reset_index(drop=True)
 bt_df["Signal_BT"] = 0
-bt_df.loc[bt_df["SMA_20"] > bt_df["SMA_50"], "Signal_BT"] = 1
+
+if backtest_strategy == "SMA Crossover":
+    valid_idx = bt_df["SMA_20"].notna() & bt_df["SMA_50"].notna()
+    bt_df.loc[valid_idx & (bt_df["SMA_20"] > bt_df["SMA_50"]), "Signal_BT"] = 1
+
+elif backtest_strategy == "RSI Mean Reversion":
+    rsi_vals = bt_df["RSI_14"].values
+    sig = 0
+    signals = []
+    for r in rsi_vals:
+        if pd.isna(r):
+            signals.append(0)
+            continue
+        if r < 30:
+            sig = 1
+        elif r > 70:
+            sig = 0
+        signals.append(sig)
+    bt_df["Signal_BT"] = signals
+
+elif backtest_strategy == "Bollinger Bands Breakout":
+    close_vals = bt_df["Close"].astype(float).values
+    upper_vals = bt_df["BB_Upper"].astype(float).values
+    lower_vals = bt_df["BB_Lower"].astype(float).values
+    sig = 0
+    signals = []
+    for c, u, l in zip(close_vals, upper_vals, lower_vals):
+        if pd.isna(u) or pd.isna(l) or pd.isna(c):
+            signals.append(0)
+            continue
+        if c > u:
+            sig = 1
+        elif c < l:
+            sig = 0
+        signals.append(sig)
+    bt_df["Signal_BT"] = signals
+
+bt_df = bt_df.dropna(subset=["Close", "Open", "Date"]).copy().reset_index(drop=True)
 bt_df["Position"] = bt_df["Signal_BT"].diff()
 
 trades = []
@@ -801,33 +842,52 @@ with tab_arima:
 # TAB 3: BACKTEST ENGINE
 # ──────────────────────────────────────────────────────────────
 with tab_backtest:
-    st.markdown(f'<p class="section-header">[ 📈 SMA CROSSOVER BACKTEST — {selected_name} ]</p>', unsafe_allow_html=True)
-    st.caption("ℹ️ Execution model: Next-day Open execution (eliminates look-ahead bias).")
+    st.markdown(f'<p class="section-header">[ 📈 {backtest_strategy.upper()} BACKTEST — {selected_name} ]</p>', unsafe_allow_html=True)
+    st.caption(f"ℹ️ Execution model: Next-day Open execution (eliminates look-ahead bias). Running strategy: **{backtest_strategy}**")
 
     if trades:
         trades_df  = pd.DataFrame(trades)
         wins       = (trades_df["P&L %"] > 0).sum()
         total      = len(trades_df)
         win_rate   = wins / total * 100
-        avg_win    = trades_df[trades_df["P&L %"] > 0]["P&L %"].mean() if wins > 0 else 0
-        avg_loss   = trades_df[trades_df["P&L %"] < 0]["P&L %"].mean() if (total - wins) > 0 else 0
-        total_ret  = trades_df["P&L %"].sum()
+        
+        # Profit Factor
+        gross_profit = trades_df[trades_df["P&L %"] > 0]["P&L %"].sum()
+        gross_loss = abs(trades_df[trades_df["P&L %"] < 0]["P&L %"].sum())
+        if gross_loss > 0:
+            profit_factor = gross_profit / gross_loss
+            profit_factor_str = f"{profit_factor:.2f}"
+        else:
+            profit_factor_str = "∞" if gross_profit > 0 else "0.00"
+            profit_factor = 999.0 if gross_profit > 0 else 0.0
 
-        b1,b2,b3,b4 = st.columns(4)
-        for col, lbl, val, clr in zip([b1,b2,b3,b4],
-            ["Win Rate","Total Trades","Avg Win","Avg Loss"],
-            [f"{win_rate:.1f}%", str(total), f"+{avg_win:.1f}%", f"{avg_loss:.1f}%"],
-            ["#00e87a","#00c8ff","#00e87a","#ff3355"]):
+        # Equity curve calculations
+        bt_df["Strategy_Return"] = bt_df["Signal_BT"].shift(1) * bt_df["Close"].astype(float).pct_change()
+        bt_df["Equity"]          = (1 + bt_df["Strategy_Return"].fillna(0)).cumprod()
+        bt_df["Buy_Hold"]        = bt_df["Close"].astype(float) / float(bt_df["Close"].iloc[0]) * 100
+        bt_df["Equity_Scaled"]   = bt_df["Equity"] * 100
+
+        # Max Drawdown
+        bt_df["Peak"]            = bt_df["Equity"].cummax()
+        bt_df["Drawdown"]        = (bt_df["Equity"] - bt_df["Peak"]) / bt_df["Peak"]
+        max_dd                   = abs(float(bt_df["Drawdown"].min() * 100))
+
+        # Sharpe Ratio
+        returns = bt_df["Strategy_Return"].fillna(0)
+        mean_ret = returns.mean()
+        std_ret = returns.std()
+        sharpe = (mean_ret / std_ret) * np.sqrt(252) if std_ret > 0 else 0.0
+
+        b1,b2,b3,b4,b5 = st.columns(5)
+        for col, lbl, val, clr in zip([b1,b2,b3,b4,b5],
+            ["Win Rate","Profit Factor","Max Drawdown","Sharpe Ratio","Total Trades"],
+            [f"{win_rate:.1f}%", profit_factor_str, f"-{max_dd:.1f}%", f"{sharpe:.2f}", str(total)],
+            ["#00e87a","#00e87a" if profit_factor >= 1.5 else "#ffcc00" if profit_factor >= 1.0 else "#ff3355","#ff3355","#00c8ff","#ddeeff"]):
             col.markdown(f'<div class="glass-card"><p class="glass-label">{lbl}</p>'
                          f'<div class="glass-value" style="color:{clr};">{val}</div></div>', unsafe_allow_html=True)
 
-        # Equity curve
-        bt_df["Strategy_Return"] = bt_df["Signal_BT"].shift(1) * bt_df["Close"].astype(float).pct_change()
-        bt_df["Equity"]          = (1 + bt_df["Strategy_Return"].fillna(0)).cumprod() * 100
-        bt_df["Buy_Hold"]        = bt_df["Close"].astype(float) / float(bt_df["Close"].iloc[0]) * 100
-
         fig3 = go.Figure()
-        fig3.add_trace(go.Scatter(x=bt_df["Date"], y=bt_df["Equity"], name="Strategy", line=dict(color="#00e87a",width=2)))
+        fig3.add_trace(go.Scatter(x=bt_df["Date"], y=bt_df["Equity_Scaled"], name="Strategy", line=dict(color="#00e87a",width=2)))
         fig3.add_trace(go.Scatter(x=bt_df["Date"], y=bt_df["Buy_Hold"], name="Buy & Hold", line=dict(color="#7c6ef8",width=1.5,dash="dot")))
         fig3.update_layout(height=280, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
             font=dict(color="#ddeeff",family="Space Mono",size=10),
@@ -838,7 +898,7 @@ with tab_backtest:
         st.markdown('<p class="section-header">[ TRADE LOG ]</p>', unsafe_allow_html=True)
         st.dataframe(trades_df.tail(30), use_container_width=True, hide_index=True)
     else:
-        st.info("Not enough crossover signals in the data period. Try a stock with more history.")
+        st.info("Not enough trade signals generated in the data period. Try a stock with more history or adjust settings.")
 
 # ──────────────────────────────────────────────────────────────
 # TAB 4: MARKET SCANNER
