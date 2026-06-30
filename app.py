@@ -776,21 +776,27 @@ def parse_options_chain(data, spot_price: float):
 # ══════════════════════════════════════════════════════════════════════════════
 def _parse_ratio_li(html: str, label: str):
     """
-    Screener.in renders each top ratio as:
-    <li class="flex flex-space-between ...">
-      <span class="name">Stock P/E</span>
-      <span class="nowrap value">
-        <span ...>27.4</span>
-      </span>
+    Screener.in renders each top ratio as an <li>, but the label text is
+    SOMETIMES wrapped in an <a> tag (ratios with a glossary tooltip, e.g.
+    P/E, ROCE, Debt to equity) and sometimes a bare <span> (e.g. ROE,
+    Dividend Yield). Both forms must be matched or roughly half the ratios
+    silently return None and show as N/A even though the data exists.
+
+    <li class="flex flex-space-between">
+      <span class="name">Stock P/E</span>                       <- bare form
+      OR
+      <span class="name"><a href="...">ROCE</a></span>           <- linked form
+      <span class="nowrap value"><span ...>27.4</span></span>
     </li>
-    We isolate the <li> containing the exact label text, then pull the
-    LAST numeric token inside its 'value' span — this avoids matching
-    unrelated numbers (chart IDs, CSS values) elsewhere on the page.
+
+    We isolate the <li>...</li> block whose name-span contains this label
+    (regardless of an inner <a> tag), then pull the LAST numeric token
+    inside that block's value span — avoids matching unrelated numbers
+    (chart IDs, CSS values) elsewhere on the page.
     """
-    # Find the <li>...</li> block that contains this exact label as inner text
     li_pattern = re.compile(
-        r'<li[^>]*>\s*<span class="name">\s*' + re.escape(label) +
-        r'\s*</span>(.*?)</li>', re.IGNORECASE | re.DOTALL
+        r'<li[^>]*>\s*<span class="name">\s*(?:<a[^>]*>)?\s*' + re.escape(label) +
+        r'\s*(?:</a>)?\s*</span>(.*?)</li>', re.IGNORECASE | re.DOTALL
     )
     m = li_pattern.search(html)
     if not m:
