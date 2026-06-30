@@ -9,6 +9,8 @@ from plotly.subplots import make_subplots
 import warnings
 import concurrent.futures
 import urllib.request
+import urllib.parse
+import re
 import xml.etree.ElementTree as ET
 import json
 import time
@@ -465,18 +467,45 @@ def load_indices():
 
 # ── News + sentiment ──────────────────────────────────────────────────────────
 @st.cache_data(ttl=900, show_spinner=False)
-def fetch_news(ticker: str):
-    clean = ticker.replace(".NS","").replace(".BO","")  # BUG FIX: strip suffix
-    url   = f"https://feeds.finance.yahoo.com/rss/2.0/headline?s={clean}&region=IN&lang=en-IN"
+def fetch_news(ticker: str, company_name: str = ""):
+    """
+    Yahoo's legacy RSS headline feed is largely dead for most tickers now,
+    so Google News RSS (which is still live and covers Indian stocks well)
+    is used as the primary source, with Yahoo as a fallback.
+    """
+    clean = ticker.replace(".NS", "").replace(".BO", "")
+    query = company_name.strip() if company_name.strip() else clean
+    items = []
+
+    # Primary: Google News RSS — reliable, no auth needed
     try:
-        req = urllib.request.Request(url, headers={"User-Agent":"Mozilla/5.0"})
+        gquery = urllib.parse.quote(f"{query} stock NSE")
+        gurl = f"https://news.google.com/rss/search?q={gquery}&hl=en-IN&gl=IN&ceid=IN:en"
+        req = urllib.request.Request(gurl, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=8) as r:
+            root = ET.fromstring(r.read())
+        for item in root.findall(".//item")[:15]:
+            title   = (item.find("title").text   or "") if item.find("title")   is not None else ""
+            link    = (item.find("link").text    or "") if item.find("link")    is not None else ""
+            pubdate = (item.find("pubDate").text or "") if item.find("pubDate") is not None else ""
+            if title:
+                items.append({"title": title, "link": link, "date": pubdate[:16]})
+    except Exception:
+        pass
+
+    if items:
+        return items
+
+    # Fallback: legacy Yahoo headline feed (works for some large-caps)
+    try:
+        url = f"https://feeds.finance.yahoo.com/rss/2.0/headline?s={clean}&region=IN&lang=en-IN"
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
         with urllib.request.urlopen(req, timeout=6) as r:
             root = ET.fromstring(r.read())
-        items = []
         for item in root.findall(".//item"):
             title   = (item.find("title").text   or "") if item.find("title")   is not None else ""
-            link    = (item.find("link").text     or "") if item.find("link")    is not None else ""
-            pubdate = (item.find("pubDate").text  or "") if item.find("pubDate") is not None else ""
+            link    = (item.find("link").text    or "") if item.find("link")    is not None else ""
+            pubdate = (item.find("pubDate").text or "") if item.find("pubDate") is not None else ""
             items.append({"title": title, "link": link, "date": pubdate[:16]})
         return items
     except Exception:
@@ -574,186 +603,6 @@ def run_backtest(df: pd.DataFrame, strategy: str):
             sell_x.append(nxt["Date"])
             sell_y.append(float(nxt["High"]) * 1.015 if pd.notna(nxt.get("High")) else float(nxt["Open"]))
     return bt, trades, buy_x, buy_y, sell_x, sell_y
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# FII / DII FLOW DATA — NSE public API
-# ══════════════════════════════════════════════════════════════════════════════
-@st.cache_data(ttl=3600, show_spinner=False)
-def fetch_fii_dii():
-    """Fetch FII/DII trade data from NSE India public API."""
-    urls = [
-        "https://www.nseindia.com/api/fiidiiTradeReact",
-        "https://www.nseindia.com/api/fii-dii-data",
-    ]
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        "Accept": "application/json",
-        "Accept-Language": "en-US,en;q=0.9",
-        "Referer": "https://www.nseindia.com/market-data/fii-dii-data",
-        "X-Requested-With": "XMLHttpRequest",
-    }
-    for url in urls:
-        try:
-            import json
-            req = urllib.request.Request(url, headers=headers)
-            with urllib.request.urlopen(req, timeout=8) as r:
-                data = json.loads(r.read().decode())
-            if isinstance(data, list) and len(data) > 0:
-                return data
-            if isinstance(data, dict):
-                for key in ["data","result","records"]:
-                    if key in data and isinstance(data[key], list):
-                        return data[key]
-        except Exception:
-            continue
-    # Fallback: return realistic placeholder with today's date
-    today = datetime.datetime.now(IST).strftime("%d-%b-%Y")
-    return [
-        {"category":"FII/FPI","buyValue":"15234.50","sellValue":"13890.25","netValue":"1344.25","date":today},
-        {"category":"DII",    "buyValue":"8923.10", "sellValue":"9876.40", "netValue":"-953.30","date":today},
-    ]
-
-def parse_fii_dii(raw):
-    """Parse raw FII/DII API response into clean records."""
-    records = []
-    for item in raw[:10]:  # last 10 trading days
-        try:
-            cat = str(item.get("category","") or item.get("name","") or "").strip()
-            if not cat:
-                continue
-            buy  = float(str(item.get("buyValue","0") or item.get("grossBuy","0")).replace(",",""))
-            sell = float(str(item.get("sellValue","0") or item.get("grossSell","0")).replace(",",""))
-            net  = float(str(item.get("netValue","0") or item.get("net","0")).replace(",",""))
-            date = str(item.get("date","") or item.get("tradingDate",""))[:11]
-            records.append({"category":cat,"buy":buy,"sell":sell,"net":net,"date":date})
-        except Exception:
-            continue
-    return records
-
-# ══════════════════════════════════════════════════════════════════════════════
-# FUNDAMENTAL DATA — screener.in scraper
-# ══════════════════════════════════════════════════════════════════════════════
-@st.cache_data(ttl=86400, show_spinner=False)
-def fetch_fundamentals(symbol: str):
-    """Scrape key fundamentals from screener.in for any NSE symbol."""
-    sym = symbol.replace(".NS","").replace(".BO","").upper()
-    url = f"https://www.screener.in/company/{sym}/consolidated/"
-    headers = {"User-Agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
-    try:
-        import json, re
-        req = urllib.request.Request(url, headers=headers)
-        with urllib.request.urlopen(req, timeout=10) as r:
-            html = r.read().decode("utf-8", errors="ignore")
-
-        def extract(pattern, default="N/A"):
-            m = re.search(pattern, html, re.IGNORECASE)
-            return m.group(1).strip() if m else default
-
-        fundamentals = {
-            "Market Cap":    extract(r'Market Cap.*?<span[^>]*>([\d,\.]+\s*(?:Cr)?)</span>'),
-            "P/E Ratio":     extract(r'Stock P/E.*?<span[^>]*>([\d,\.]+)</span>'),
-            "P/B Ratio":     extract(r'Price to Book.*?<span[^>]*>([\d,\.]+)</span>'),
-            "EPS (TTM)":     extract(r'EPS.*?<span[^>]*>([\d,\.\-]+)</span>'),
-            "ROE":           extract(r'Return on Equity.*?<span[^>]*>([\d,\.]+)</span>'),
-            "ROCE":          extract(r'Return on Capital.*?<span[^>]*>([\d,\.]+)</span>'),
-            "Debt/Equity":   extract(r'Debt to Equity.*?<span[^>]*>([\d,\.]+)</span>'),
-            "Promoter Hold": extract(r'Promoter Holding.*?<span[^>]*>([\d,\.]+\s*%?)</span>'),
-            "Dividend Yield":extract(r'Dividend Yield.*?<span[^>]*>([\d,\.]+\s*%?)</span>'),
-            "Book Value":    extract(r'Book Value.*?<span[^>]*>([\d,\.]+)</span>'),
-        }
-        return fundamentals, url
-    except Exception:
-        return None, url
-
-# ══════════════════════════════════════════════════════════════════════════════
-# OPTIONS CHAIN — NSE public API
-# ══════════════════════════════════════════════════════════════════════════════
-@st.cache_data(ttl=900, show_spinner=False)
-def fetch_options_chain(symbol: str):
-    """Fetch options chain from NSE for equity/index."""
-    sym = symbol.replace(".NS","").replace(".BO","").upper()
-    headers = {
-        "User-Agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        "Accept":"application/json, text/plain, */*",
-        "Accept-Language":"en-US,en;q=0.9",
-        "Referer":f"https://www.nseindia.com/option-chain",
-        "X-Requested-With":"XMLHttpRequest",
-    }
-    import json
-    # Index symbols
-    index_syms = {"NIFTY","BANKNIFTY","FINNIFTY","MIDCPNIFTY","NIFTYNXT50","SENSEX"}
-    if sym in index_syms:
-        url = f"https://www.nseindia.com/api/option-chain-indices?symbol={sym}"
-    else:
-        url = f"https://www.nseindia.com/api/option-chain-equities?symbol={sym}"
-    try:
-        req = urllib.request.Request(url, headers=headers)
-        with urllib.request.urlopen(req, timeout=10) as r:
-            data = json.loads(r.read().decode())
-        records = data.get("records",{})
-        underlying = float(records.get("underlyingValue", 0))
-        expiry_dates = records.get("expiryDates",[])
-        raw_data = records.get("data",[])
-        return raw_data, underlying, expiry_dates, None
-    except Exception as e:
-        return None, 0, [], str(e)
-
-def compute_options_analytics(raw_data, underlying, selected_expiry=None):
-    """Compute PCR, Max Pain, OI distribution from options chain data."""
-    import json
-    rows = []
-    for item in raw_data:
-        if selected_expiry and item.get("expiryDate") != selected_expiry:
-            continue
-        strike = float(item.get("strikePrice", 0))
-        ce = item.get("CE", {})
-        pe = item.get("PE", {})
-        rows.append({
-            "strike":     strike,
-            "ce_oi":      float(ce.get("openInterest",0) or 0),
-            "ce_vol":     float(ce.get("totalTradedVolume",0) or 0),
-            "ce_ltp":     float(ce.get("lastPrice",0) or 0),
-            "ce_iv":      float(ce.get("impliedVolatility",0) or 0),
-            "pe_oi":      float(pe.get("openInterest",0) or 0),
-            "pe_vol":     float(pe.get("totalTradedVolume",0) or 0),
-            "pe_ltp":     float(pe.get("lastPrice",0) or 0),
-            "pe_iv":      float(pe.get("impliedVolatility",0) or 0),
-        })
-    if not rows:
-        return None, None, None, None, pd.DataFrame()
-
-    df_opt = pd.DataFrame(rows).sort_values("strike").reset_index(drop=True)
-
-    # Put/Call Ratio (OI-based)
-    total_ce_oi = df_opt["ce_oi"].sum()
-    total_pe_oi = df_opt["pe_oi"].sum()
-    pcr = round(total_pe_oi / total_ce_oi, 3) if total_ce_oi > 0 else 0
-
-    # PCR Volume
-    pcr_vol = round(df_opt["pe_vol"].sum() / df_opt["ce_vol"].sum(), 3) if df_opt["ce_vol"].sum() > 0 else 0
-
-    # Max Pain — strike where total option buyers lose the most
-    strikes = df_opt["strike"].values
-    total_pain = []
-    for s in strikes:
-        pain = 0
-        for _, row in df_opt.iterrows():
-            k = row["strike"]
-            # CE loss: if s > k, CE holders of strike k are in-the-money
-            pain += row["ce_oi"] * max(0, s - k)
-            # PE loss: if s < k, PE holders of strike k are in-the-money
-            pain += row["pe_oi"] * max(0, k - s)
-        total_pain.append(pain)
-
-    max_pain_idx = int(np.argmin(total_pain))
-    max_pain = float(strikes[max_pain_idx])
-
-    # Key resistance (highest CE OI) and support (highest PE OI)
-    resistance = float(df_opt.loc[df_opt["ce_oi"].idxmax(), "strike"]) if len(df_opt) > 0 else 0
-    support     = float(df_opt.loc[df_opt["pe_oi"].idxmax(), "strike"]) if len(df_opt) > 0 else 0
-
-    return pcr, max_pain, resistance, support, df_opt
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -898,46 +747,83 @@ def parse_options_chain(data, spot_price: float):
 # ══════════════════════════════════════════════════════════════════════════════
 # FUNDAMENTAL DATA — screener.in scraper
 # ══════════════════════════════════════════════════════════════════════════════
+def _parse_ratio_li(html: str, label: str):
+    """
+    Screener.in renders each top ratio as:
+    <li class="flex flex-space-between ...">
+      <span class="name">Stock P/E</span>
+      <span class="nowrap value">
+        <span ...>27.4</span>
+      </span>
+    </li>
+    We isolate the <li> containing the exact label text, then pull the
+    LAST numeric token inside its 'value' span — this avoids matching
+    unrelated numbers (chart IDs, CSS values) elsewhere on the page.
+    """
+    # Find the <li>...</li> block that contains this exact label as inner text
+    li_pattern = re.compile(
+        r'<li[^>]*>\s*<span class="name">\s*' + re.escape(label) +
+        r'\s*</span>(.*?)</li>', re.IGNORECASE | re.DOTALL
+    )
+    m = li_pattern.search(html)
+    if not m:
+        return None
+    block = m.group(1)
+    nums = re.findall(r'-?[\d]+(?:,\d{3})*(?:\.\d+)?', block)
+    if not nums:
+        return None
+    try:
+        return float(nums[-1].replace(",", ""))
+    except Exception:
+        return None
+
+def _sane(value, lo, hi):
+    """Reject obviously-garbage scraped numbers (wrong magnitude)."""
+    if value is None:
+        return None
+    return value if lo <= value <= hi else None
+
 @st.cache_data(ttl=86400, show_spinner=False)
 def fetch_fundamentals(symbol: str):
-    """Scrape key ratios from screener.in for an NSE symbol."""
-    clean = symbol.replace(".NS","").replace(".BO","").upper()
+    """Scrape key ratios from screener.in for an NSE symbol, with range validation."""
+    clean = symbol.replace(".NS", "").replace(".BO", "").upper()
     url   = f"https://www.screener.in/company/{clean}/consolidated/"
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
     try:
-        req  = urllib.request.Request(url, headers=headers)
+        req = urllib.request.Request(url, headers=headers)
         with urllib.request.urlopen(req, timeout=10) as r:
             html = r.read().decode("utf-8", errors="ignore")
-
-        def extract(label):
-            import re
-            # Look for the label in a li element and get the number after it
-            patterns = [
-                rf"{label}[^\d<]*<[^>]*>\s*([\d,\.]+)",
-                rf">{label}</[^>]+>[^<]*<[^>]+>([\d,\.]+)",
-                rf"{label}[^\d]{{0,30}}([\d,\.]+)",
-            ]
-            for pat in patterns:
-                m = re.search(pat, html, re.IGNORECASE)
-                if m:
-                    try:
-                        return float(m.group(1).replace(",",""))
-                    except Exception:
-                        pass
-            return None
-
-        return {
-            "P/E Ratio":      extract("Stock P/E") or extract("P/E"),
-            "P/B Ratio":      extract("Price to Book") or extract("P/B"),
-            "ROE (%)":        extract("Return on Equity") or extract("ROE"),
-            "ROCE (%)":       extract("Return on Capital Employed") or extract("ROCE"),
-            "Debt/Equity":    extract("Debt to equity") or extract("D/E"),
-            "Promoter Hold%": extract("Promoter Holding") or extract("Promoter"),
-            "EPS (TTM)":      extract("EPS"),
-            "Div Yield (%)":  extract("Dividend Yield"),
-        }
     except Exception:
-        return {}
+        # Try standalone (non-consolidated) page as fallback — some companies
+        # (esp. those without subsidiaries) only have the standalone version
+        try:
+            url2 = f"https://www.screener.in/company/{clean}/"
+            req2 = urllib.request.Request(url2, headers=headers)
+            with urllib.request.urlopen(req2, timeout=10) as r:
+                html = r.read().decode("utf-8", errors="ignore")
+            url = url2
+        except Exception:
+            return {}, url
+
+    pe   = _sane(_parse_ratio_li(html, "Stock P/E"),         0, 500)
+    pb   = _sane(_parse_ratio_li(html, "Price to Book value"), 0, 100)
+    roe  = _sane(_parse_ratio_li(html, "ROE"),                -100, 100)
+    roce = _sane(_parse_ratio_li(html, "ROCE"),               -100, 100)
+    de   = _sane(_parse_ratio_li(html, "Debt to equity"),      0, 20)
+    prom = _sane(_parse_ratio_li(html, "Promoter holding"),    0, 100)
+    eps  = _sane(_parse_ratio_li(html, "EPS"),                -1000, 100000)
+    dy   = _sane(_parse_ratio_li(html, "Dividend Yield"),       0, 25)
+
+    return {
+        "P/E Ratio":      pe,
+        "P/B Ratio":      pb,
+        "ROE (%)":        roe,
+        "ROCE (%)":       roce,
+        "Debt/Equity":    de,
+        "Promoter Hold%": prom,
+        "EPS (TTM)":      eps,
+        "Div Yield (%)":  dy,
+    }, url
 
 # ══════════════════════════════════════════════════════════════════════════════
 # HEADER
@@ -1898,7 +1784,7 @@ with tab_funds:
     st.caption("Key financial ratios from Screener.in. Refreshed daily.")
 
     with st.spinner(f"Fetching fundamentals for {selected_name}..."):
-        fund_data = fetch_fundamentals(selected_ticker)
+        fund_data, fund_url = fetch_fundamentals(selected_ticker)
 
     # Always show the gauge layout, fill with data if available
     FUND_META = [
@@ -1952,8 +1838,8 @@ with tab_funds:
                         f'<p style="font-size:13px;color:{verdict_clr};font-weight:600;margin:4px 0;">{verdict_text}</p></div>',
                         unsafe_allow_html=True)
 
-        st.caption("Data source: Screener.in · Consolidated financials · Updated daily")
-        st.markdown(f"[View full analysis on Screener.in](https://www.screener.in/company/{selected_ticker.replace('.NS','').replace('.BO','')}/consolidated/)")
+        st.caption("Data source: Screener.in · Refreshed daily · Garbage/out-of-range values are filtered")
+        st.markdown(f"[View full analysis on Screener.in]({fund_url})")
 
     else:
         st.warning(f"Could not fetch fundamental data for {selected_name} from Screener.in.")
@@ -1980,7 +1866,7 @@ with tab_funds:
 with tab_news:
     st.markdown(f'<p class="section-header">[ NEWS & SENTIMENT — {selected_name} ]</p>', unsafe_allow_html=True)
     with st.spinner("Fetching headlines..."):
-        items = fetch_news(selected_ticker)
+        items = fetch_news(selected_ticker, selected_name)
 
     if items:
         score, cat = sentiment_score(items)
