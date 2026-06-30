@@ -283,7 +283,34 @@ for sector, stocks in SECTORS.items():
 @st.cache_data(ttl=3600, show_spinner=False)
 def load_ohlcv(ticker: str, period: str = "5y"):
     try:
-        df = yf.download(ticker, period=period, interval="1d", auto_adjust=True, progress=False)
+        df = yf.download(ticker, period=period, interval="1d", auto_adjust=True,
+                          progress=False, timeout=10)
+        if df is None or df.empty:
+            return None
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
+        df = df.reset_index()
+        df.columns = [str(c).strip() for c in df.columns]
+        for col in ["Open","High","Low","Close","Volume"]:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors="coerce")
+        df = df.dropna(subset=["Close"])
+        return df
+    except Exception:
+        return None
+
+def _download_raw(ticker: str, period: str = "1y"):
+    """
+    Thread-safe, uncached download used ONLY inside ThreadPoolExecutor workers.
+    Streamlit's @st.cache_data is not safe to call concurrently from multiple
+    threads (it has historically caused deadlocks/hangs under parallel writes),
+    so the scanner's worker threads must never call the cached load_ohlcv().
+    A hard timeout also guarantees a worker can never hang forever waiting
+    on a slow/rate-limited Yahoo Finance response.
+    """
+    try:
+        df = yf.download(ticker, period=period, interval="1d", auto_adjust=True,
+                          progress=False, timeout=8, threads=False)
         if df is None or df.empty:
             return None
         if isinstance(df.columns, pd.MultiIndex):
@@ -1367,7 +1394,7 @@ with tab_scan:
     def _scan_one(args):
         name, ticker_s = args
         try:
-            sd = load_ohlcv(ticker_s, period="1y")
+            sd = _download_raw(ticker_s, period="1y")  # uncached — safe across threads
             if sd is None or len(sd) < 60:
                 return None
             sd  = add_indicators(sd)
@@ -1398,13 +1425,20 @@ with tab_scan:
             pool += [(n, f"{s}.NS") for n, s in SECTORS.get(sec, [])]
         pool = pool[:max_stocks]
         results, prog = [], st.progress(0, text="Scanning...")
-        with concurrent.futures.ThreadPoolExecutor(max_workers=8) as ex:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=6) as ex:
             fmap = {ex.submit(_scan_one, a): a for a in pool}
-            for idx, fut in enumerate(concurrent.futures.as_completed(fmap)):
-                r = fut.result()
-                if r:
-                    results.append(r)
-                prog.progress((idx + 1) / max(len(pool), 1), text=f"Scanned {idx + 1}/{len(pool)}")
+            done_count = 0
+            try:
+                # Hard ceiling: 4s per stock max, so the whole batch can never
+                # hang the app indefinitely even if Yahoo Finance stalls.
+                for fut in concurrent.futures.as_completed(fmap, timeout=max(20, len(pool) * 4)):
+                    r = fut.result()
+                    if r:
+                        results.append(r)
+                    done_count += 1
+                    prog.progress(done_count / max(len(pool), 1), text=f"Scanned {done_count}/{len(pool)}")
+            except concurrent.futures.TimeoutError:
+                st.warning(f"Scan timed out after partial completion — showing {len(results)} of {len(pool)} stocks scanned so far.")
         prog.empty()
         if results:
             st.session_state["scan_results"] = results
