@@ -1474,8 +1474,8 @@ with tab_backtest:
 # ─────────────────────────────────────────────────────────────────────────────
 with tab_scan:
     st.markdown('<p class="section-header">[ MULTI-STOCK BULK SCANNER ]</p>', unsafe_allow_html=True)
-    scan_sectors = st.multiselect("Sectors", list(SECTORS.keys()),
-                                  default=["Banking & Finance" if any("Banking" in k for k in SECTORS) else list(SECTORS.keys())[0]])
+    default_sector = next((k for k in SECTORS.keys() if "Banking" in k), list(SECTORS.keys())[0])
+    scan_sectors = st.multiselect("Sectors", list(SECTORS.keys()), default=[default_sector])
     max_stocks = st.slider("Max stocks", 10, 80, 20, step=5)
 
     def _scan_one(args):
