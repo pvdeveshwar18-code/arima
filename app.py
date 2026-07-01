@@ -1009,7 +1009,22 @@ if raw_df is None or len(raw_df) < 60:
         st.info("For NSE stocks append `.NS` (e.g. RELIANCE.NS). For BSE append `.BO`.")
     st.stop()
 
-df  = add_indicators(raw_df)
+# ── Session-state cache for add_indicators + run_backtest ────────────────────
+# Both are expensive (1250-row loop). We only recompute when ticker or
+# strategy actually changes — NOT on every widget interaction / script rerun.
+_df_cache_key = f"df__{selected_ticker}"
+_bt_cache_key = f"bt__{selected_ticker}__{backtest_strategy}"
+
+if _df_cache_key not in st.session_state:
+    st.session_state[_df_cache_key] = add_indicators(raw_df)
+
+df = st.session_state[_df_cache_key]
+
+if _bt_cache_key not in st.session_state:
+    st.session_state[_bt_cache_key] = run_backtest(df, backtest_strategy)
+
+bt_df, trades, buy_x, buy_y, sell_x, sell_y = st.session_state[_bt_cache_key]
+
 last     = df.iloc[-1]
 prev     = df.iloc[-2]
 close    = float(last["Close"])
@@ -1025,9 +1040,6 @@ rsi_val  = float(last["RSI_14"]) if pd.notna(last.get("RSI_14")) else 50.0
 macd_v   = float(last.get("MACD") or 0)
 macd_sv  = float(last.get("MACD_Signal") or 0)
 vol20    = float(last.get("Volatility_20") or 0)
-
-# Run backtest (needed for chart markers)
-bt_df, trades, buy_x, buy_y, sell_x, sell_y = run_backtest(df, backtest_strategy)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # KPI ROW
@@ -1397,57 +1409,89 @@ with tab_scan:
     scan_sectors = st.multiselect("Sectors", list(SECTORS.keys()), default=[default_sector])
     max_stocks = st.slider("Max stocks", 10, 80, 20, step=5)
 
-    def _scan_one(args):
-        name, ticker_s = args
-        try:
-            sd = _download_raw(ticker_s, period="1y")  # uncached — safe across threads
-            if sd is None or len(sd) < 60:
-                return None
-            sd  = add_indicators(sd)
-            ls  = sd.iloc[-1]
-            ps  = sd.iloc[-2]
-            sig = get_signal(sd)
-            cp  = float(ls["Close"])
-            chg = (cp - float(ps["Close"])) / float(ps["Close"]) * 100
-            atr = float(ls["ATR_14"]) if pd.notna(ls.get("ATR_14")) else cp * 0.02
-            sl  = cp - atr * 1.5
-            tp  = cp + atr * 1.5 * risk_reward
-            qty = max(1, int(allocated_capital * (risk_per_trade / 100) / (atr * 1.5)))
-            rsi = float(ls["RSI_14"]) if pd.notna(ls.get("RSI_14")) else 50.0
-            stre = get_signal_strength(sd)
-            return {
-                "Stock": name, "Ticker": ticker_s.replace(".NS", ""),
-                "Price": f"Rs{cp:,.2f}", "1D%": f"{chg:+.2f}",
-                "RSI": f"{rsi:.1f}", "Signal": sig, "Strength": stre,
-                "SL": f"Rs{sl:,.2f}", "Target": f"Rs{tp:,.2f}", "Qty": qty,
-                "_sig": sig, "_chg": chg, "_str": stre
-            }
-        except Exception:
-            return None
-
     if st.button("RUN SCAN", use_container_width=True):
         pool = []
         for sec in scan_sectors:
             pool += [(n, f"{s}.NS") for n, s in SECTORS.get(sec, [])]
         pool = pool[:max_stocks]
-        results, prog = [], st.progress(0, text="Scanning...")
-        with concurrent.futures.ThreadPoolExecutor(max_workers=6) as ex:
-            fmap = {ex.submit(_scan_one, a): a for a in pool}
-            done_count = 0
+
+        if not pool:
+            st.warning("No stocks in selected sectors.")
+        else:
+            prog = st.progress(0, text="Downloading batch data from Yahoo Finance...")
+            results = []
+
             try:
-                # Hard ceiling: 4s per stock max, so the whole batch can never
-                # hang the app indefinitely even if Yahoo Finance stalls.
-                for fut in concurrent.futures.as_completed(fmap, timeout=max(20, len(pool) * 4)):
-                    r = fut.result()
-                    if r:
-                        results.append(r)
-                    done_count += 1
-                    prog.progress(done_count / max(len(pool), 1), text=f"Scanned {done_count}/{len(pool)}")
-            except concurrent.futures.TimeoutError:
-                st.warning(f"Scan timed out after partial completion — showing {len(results)} of {len(pool)} stocks scanned so far.")
-        prog.empty()
-        if results:
-            st.session_state["scan_results"] = results
+                # ── BATCH DOWNLOAD — single HTTP call for all tickers ──────────
+                # yf.download with a list of tickers is 5-10x faster than
+                # individual calls: one connection, one response, no per-stock RTT.
+                tickers_list = [t for _, t in pool]
+                prog.progress(0.1, text=f"Fetching {len(tickers_list)} stocks in one batch...")
+
+                batch_df = yf.download(
+                    tickers_list, period="1y", interval="1d",
+                    auto_adjust=True, progress=False,
+                    timeout=30, group_by="ticker", threads=True
+                )
+                prog.progress(0.5, text="Computing indicators for each stock...")
+
+                # ── Process each ticker from the batch result ─────────────────
+                for idx, (name, ticker_s) in enumerate(pool):
+                    try:
+                        # Extract this ticker's slice from the MultiIndex batch result
+                        if isinstance(batch_df.columns, pd.MultiIndex):
+                            if ticker_s in batch_df.columns.get_level_values(0):
+                                sd = batch_df[ticker_s].copy()
+                            elif ticker_s in batch_df.columns.get_level_values(1):
+                                sd = batch_df.xs(ticker_s, axis=1, level=1).copy()
+                            else:
+                                continue
+                        else:
+                            sd = batch_df.copy()
+
+                        if sd is None or sd.empty or len(sd) < 60:
+                            continue
+
+                        sd = sd.reset_index()
+                        sd.columns = [str(c).strip() for c in sd.columns]
+                        for col in ["Open","High","Low","Close","Volume"]:
+                            if col in sd.columns:
+                                sd[col] = pd.to_numeric(sd[col], errors="coerce")
+                        sd = sd.dropna(subset=["Close"])
+                        if len(sd) < 60:
+                            continue
+
+                        sd  = add_indicators(sd)
+                        ls  = sd.iloc[-1]
+                        ps  = sd.iloc[-2]
+                        sig = get_signal(sd)
+                        cp  = float(ls["Close"])
+                        chg = (cp - float(ps["Close"])) / float(ps["Close"]) * 100
+                        atr = float(ls["ATR_14"]) if pd.notna(ls.get("ATR_14")) else cp * 0.02
+                        sl  = cp - atr * 1.5
+                        tp  = cp + atr * 1.5 * risk_reward
+                        qty = max(1, int(allocated_capital * (risk_per_trade / 100) / (atr * 1.5)))
+                        rsi_v = float(ls["RSI_14"]) if pd.notna(ls.get("RSI_14")) else 50.0
+                        stre = get_signal_strength(sd)
+                        results.append({
+                            "Stock": name, "Ticker": ticker_s.replace(".NS",""),
+                            "Price": f"₹{cp:,.2f}", "1D%": f"{chg:+.2f}",
+                            "RSI": f"{rsi_v:.1f}", "Signal": sig, "Strength": stre,
+                            "SL": f"₹{sl:,.2f}", "Target": f"₹{tp:,.2f}", "Qty": qty,
+                            "_sig": sig, "_chg": chg, "_str": stre
+                        })
+                    except Exception:
+                        continue
+                    prog.progress(0.5 + 0.5 * (idx + 1) / len(pool),
+                                  text=f"Processing {idx + 1}/{len(pool)} stocks...")
+
+            except Exception as e:
+                st.warning(f"Batch download issue: {e} — try reducing the stock count.")
+
+            prog.empty()
+            if results:
+                st.session_state["scan_results"] = results
+                st.success(f"✅ Scan complete — {len(results)} stocks processed.")
 
     if st.session_state.get("scan_results"):
         res  = st.session_state["scan_results"]
